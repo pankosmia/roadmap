@@ -544,3 +544,20 @@ footer a {
     transition-duration: .01ms !important;
   }
 }
+
+.column-link {
+  text-decoration: none;
+}
+
+.column-link:hover,
+.column-link:focus-visible {
+  text-decoration: underline;
+}
+
+body[data-page="detail"] .board {
+  grid-template-columns: repeat(4, minmax(245px, 1fr));
+}
+
+body[data-page="detail"] .column-dot {
+  background: var(--purple);
+}

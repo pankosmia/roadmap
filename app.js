@@ -4,6 +4,14 @@ const PAGE_SIZE = 100;
 const VERSIONS = ["Unassigned", "Backlog", "Next", "Current"];
 const VERSION_LABELS = new Map(VERSIONS.map((version) => [version, `Version : ${version}`]));
 
+const FLOWS = ["No Spec", "UI Design", "Spec'ing", "Spec'd", "Implement Now", "Implementing", "Reviewing", "Done"];
+const BACKLOG_FLOWS = FLOWS.slice(0, 4);
+const DEFAULT_FLOW = "No Spec";
+const DETAIL_VERSIONS = ["Backlog", "Next", "Current"];
+const requestedVersion = new URLSearchParams(window.location.search).get("version");
+const detailVersion = document.body.dataset.page === "detail" && DETAIL_VERSIONS.includes(requestedVersion) ? requestedVersion : "";
+const COLUMNS = detailVersion ? (detailVersion === "Backlog" ? BACKLOG_FLOWS : FLOWS) : VERSIONS;
+
 const board = document.querySelector("#board");
 const summary = document.querySelector("#board-summary");
 const notice = document.querySelector("#notice");
@@ -57,7 +65,7 @@ function apiErrorMessage(error) {
 }
 
 async function loadIssues() {
-  if (isLoading) return;
+  if (isLoading || (document.body.dataset.page === "detail" && !detailVersion)) return;
   isLoading = true;
   refreshButton.disabled = true;
   notice.hidden = true;
@@ -83,8 +91,7 @@ async function loadIssues() {
 
     issues = results;
     renderBoard();
-    const totalText = `${issues.length} ${issues.length === 1 ? "issue" : "issues"}`;
-    summary.textContent = `${totalText} from public Pankosmia repositories`;
+    summary.textContent = summaryText();
     if (totalCount > 1000) {
       showNotice(`GitHub search can return at most 1,000 results. Showing the first 1,000 of ${totalCount} issues.`);
     } else {
@@ -107,8 +114,33 @@ async function loadIssues() {
   }
 }
 
+function summaryText() {
+  const count = detailVersion ? issues.filter((issue) => issueVersion(issue) === detailVersion).length : issues.length;
+  const scope = detailVersion ? `in ${detailVersion}` : "from public Pankosmia repositories";
+  return `${count} ${count === 1 ? "issue" : "issues"} ${scope}`;
+}
+
 function isVersionLabel(labelName) {
   return /^Version\s*:/i.test(labelName);
+}
+
+function flowLabelName(flow) {
+  return `Flow : ${flow}`;
+}
+
+function isFlowLabel(labelName) {
+  return /^Flow\s*:/i.test(labelName);
+}
+
+function issueFlow(issue) {
+  for (const flow of FLOWS) {
+    if (issue.labels.some((label) => label.name === flowLabelName(flow))) return flow;
+  }
+  return DEFAULT_FLOW;
+}
+
+function issueColumn(issue) {
+  return detailVersion ? issueFlow(issue) : issueVersion(issue);
 }
 
 function issueVersion(issue) {
@@ -129,8 +161,9 @@ function escapeHtml(value) {
 
 function renderBoard() {
   board.replaceChildren();
-  for (const version of VERSIONS) {
-    const columnIssues = issues.filter((issue) => issueVersion(issue) === version);
+  const visibleIssues = detailVersion ? issues.filter((issue) => issueVersion(issue) === detailVersion) : issues;
+  for (const version of COLUMNS) {
+    const columnIssues = visibleIssues.filter((issue) => issueColumn(issue) === version);
     const column = document.createElement("section");
     column.className = "column";
     column.dataset.version = version;
@@ -139,11 +172,11 @@ function renderBoard() {
       <header class="column-heading">
         <div class="column-title-wrap">
           <span class="column-dot" aria-hidden="true"></span>
-          <h2>${version}</h2>
+          <h2>${!detailVersion && DETAIL_VERSIONS.includes(version) ? `<a class="column-link" href="detail.html?version=${version}">${version}</a>` : escapeHtml(version)}</h2>
         </div>
         <span class="issue-count">${columnIssues.length}</span>
       </header>
-      <div class="issue-list" data-drop-version="${version}"></div>
+      <div class="issue-list" data-drop-version="${escapeHtml(version)}"></div>
     `;
     column.dataset.dropVersion = version;
     column.addEventListener("dragover", onDragOver);
@@ -152,7 +185,7 @@ function renderBoard() {
     const issueList = column.querySelector(".issue-list");
 
     if (columnIssues.length === 0) {
-      issueList.innerHTML = '<p class="empty-column">No issues in this version</p>';
+      issueList.innerHTML = '<p class="empty-column">No issues in this ${detailVersion ? "stage" : "version"}</p>';
     } else {
       for (const issue of columnIssues) issueList.append(createIssueCard(issue));
     }
@@ -171,7 +204,7 @@ function createIssueCard(issue) {
   const repository = issue.repository_url.split("/").slice(-2).join("/");
   const number = issue.number;
   const labels = issue.labels
-    .filter((label) => !isVersionLabel(label.name))
+    .filter((label) => !isVersionLabel(label.name) && !(detailVersion && isFlowLabel(label.name)))
     .slice(0, 5)
     .map((label) => `<span class="label-chip">${escapeHtml(label.name)}</span>`)
     .join("");
@@ -185,8 +218,8 @@ function createIssueCard(issue) {
     ${labels ? `<div class="issue-labels" aria-label="Issue labels">${labels}</div>` : ""}
     <div class="card-footer">
       <label class="move-label" for="move-${issue.id}">Move to</label>
-      <select class="move-select" id="move-${issue.id}" aria-label="Move issue #${number} to version" ${accessToken ? "" : "disabled"}>
-        ${VERSIONS.map((version) => `<option value="${version}" ${issueVersion(issue) === version ? "selected" : ""}>${version}</option>`).join("")}
+      <select class="move-select" id="move-${issue.id}" aria-label="Move issue #${number} to ${detailVersion ? "stage" : "version"}" ${accessToken ? "" : "disabled"}>
+        ${COLUMNS.map((column) => `<option value="${escapeHtml(column)}" ${issueColumn(issue) === column ? "selected" : ""}>${escapeHtml(column)}</option>`).join("")}
       </select>
     </div>
   `;
@@ -238,13 +271,23 @@ async function moveIssue(issue, version) {
     openAuthDialog();
     return;
   }
-  if (!VERSIONS.includes(version) || issueVersion(issue) === version) return;
+  if (!COLUMNS.includes(version) || issueColumn(issue) === version) return;
 
   const [owner, repository] = issue.repository_url.split("/").slice(-2);
-  const labels = issue.labels
-    .map((label) => label.name)
-    .filter((labelName) => !isVersionLabel(labelName));
-  labels.push(VERSION_LABELS.get(version));
+  let labels;
+  if (detailVersion) {
+    labels = issue.labels
+      .map((label) => label.name)
+      .filter((labelName) => !isFlowLabel(labelName));
+    labels.push(flowLabelName(version));
+  } else {
+    labels = issue.labels
+      .map((label) => label.name)
+      .filter((labelName) => !isVersionLabel(labelName));
+    labels.push(VERSION_LABELS.get(version));
+    const hasFlow = labels.some((labelName) => isFlowLabel(labelName));
+    if (DETAIL_VERSIONS.includes(version) && !hasFlow) labels.push(flowLabelName(DEFAULT_FLOW));
+  }
 
   const selects = document.querySelectorAll(`.move-select[id="move-${issue.id}"]`);
   selects.forEach((select) => {
@@ -265,7 +308,7 @@ async function moveIssue(issue, version) {
     const index = issues.findIndex((item) => item.id === issue.id);
     if (index !== -1) issues[index] = updated;
     renderBoard();
-    summary.textContent = `${issues.length} ${issues.length === 1 ? "issue" : "issues"} from public Pankosmia repositories`;
+    summary.textContent = summaryText();
   } catch (error) {
     showNotice(`Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`, true);
     renderBoard();
@@ -320,6 +363,15 @@ function disconnectToken() {
   authStatus.textContent = "Read-only";
   authButton.textContent = "Connect GitHub";
   renderBoard();
+}
+
+if (document.body.dataset.page === "detail") {
+  const title = document.querySelector("#page-title");
+  if (detailVersion) title.textContent = `${detailVersion} — detailed view`;
+  else {
+    title.textContent = "Unknown version";
+    board.innerHTML = '<div class="empty-state">Choose Backlog, Next or Current from the <a href="./">main board</a>.</div>';
+  }
 }
 
 refreshButton.addEventListener("click", loadIssues);
