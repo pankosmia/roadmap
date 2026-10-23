@@ -195,6 +195,14 @@ h1 {
   padding: 1px 1px 18px;
 }
 
+.board > .column:first-child {
+  margin-left: auto;
+}
+
+.board > .column:last-child {
+  margin-right: auto;
+}
+
 .column {
   display: flex;
   flex: 1 1 245px;
