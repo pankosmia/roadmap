@@ -31,7 +31,25 @@ let issues = [];
 let isLoading = false;
 let searchTerm = "";
 let undoTimer = 0;
-const collapsedColumns = new Set();
+const COLLAPSED_KEY = `roadmap-collapsed-${detailVersion || "main"}`;
+const collapsedColumns = new Set(loadCollapsedColumns());
+
+function loadCollapsedColumns() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COLLAPSED_KEY));
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCollapsedColumns() {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedColumns]));
+  } catch {
+    // Storage may be unavailable; the collapsed state then lasts only for this page view.
+  }
+}
 const TOKEN_KEY = "roadmap-token";
 const searchInput = document.querySelector("#search-input");
 
@@ -216,6 +234,7 @@ function renderBoard() {
     collapseButton.addEventListener("click", () => {
       if (collapsedColumns.has(version)) collapsedColumns.delete(version);
       else collapsedColumns.add(version);
+      saveCollapsedColumns();
       applyCollapsed();
     });
     applyCollapsed();
