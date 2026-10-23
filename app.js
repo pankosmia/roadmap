@@ -285,7 +285,7 @@ function createIssueCard(issue) {
   const repository = issue.repository_url.split("/").slice(-2).join("/");
   const number = issue.number;
   const labels = issue.labels
-    .filter((label) => !isVersionLabel(label.name) && !(detailVersion && isFlowLabel(label.name)))
+    .filter((label) => (detailVersion ? !isFlowLabel(label.name) : !isVersionLabel(label.name)))
     .slice(0, 5)
     .map((label) => `<span class="label-chip">${escapeHtml(label.name)}</span>`)
     .join("");
@@ -295,7 +295,7 @@ function createIssueCard(issue) {
       <span class="repo-name" title="${escapeHtml(repository)}">${escapeHtml(repository)}</span>
       <span class="issue-number">#${number}</span>
     </div>
-    <a class="issue-title" href="${escapeHtml(issue.html_url)}">${escapeHtml(issue.title)}</a>
+    <a class="issue-title" href="${escapeHtml(issue.html_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(issue.title)}</a>
     ${labels ? `<div class="issue-labels" aria-label="Issue labels">${labels}</div>` : ""}
     ${cardStats(issue)}
     <div class="card-footer">
@@ -318,6 +318,8 @@ function createIssueCard(issue) {
       const item = document.createElement("a");
       item.className = "subissue-link";
       item.href = subIssue.html_url;
+      item.target = "_blank";
+      item.rel = "noopener noreferrer";
       item.textContent = `#${subIssue.number} ${subIssue.title}`;
       accordion.append(item);
     }
