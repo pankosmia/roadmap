@@ -65,7 +65,7 @@ async function loadIssues() {
   summary.textContent = "Loading issues…";
 
   try {
-    const query = encodeURIComponent(`org:${ORGANIZATION} is:issue`);
+    const query = encodeURIComponent(`org:${ORGANIZATION} is:issue is:open`);
     const firstPage = await githubRequest(
       `${API_ROOT}/search/issues?q=${query}&per_page=${PAGE_SIZE}&page=1`
     );

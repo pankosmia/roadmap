@@ -1,6 +1,6 @@
 # Iffy
 
-Iffy is a GitHub Pages issue board for planning work across public repositories
+Iffy is a GitHub Pages issue board for planning open issues across public repositories
 in the Pankosmia organization. Issues are grouped into **Unassigned**, **Backlog**,
 **Next**, and **Current** according to their `Version : ...` label. Issues without
 a Version label appear under **Unassigned**.
