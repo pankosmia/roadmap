@@ -120,9 +120,9 @@ a:focus-visible {
 }
 
 main {
-  width: min(1600px, 100%);
-  margin: 0 auto;
-  padding: 39px clamp(20px, 4vw, 56px) 28px;
+  width: 100%;
+  margin: 0;
+  padding: 24px 12px 28px;
 }
 
 .page-heading {
@@ -200,6 +200,7 @@ h1 {
   flex: 1 1 245px;
   flex-direction: column;
   min-width: 245px;
+  max-width: 420px;
   max-height: calc(100vh - 160px);
   min-height: 120px;
   overflow: hidden;
