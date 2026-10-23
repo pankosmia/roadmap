@@ -243,7 +243,7 @@ function subIssueProgress(issue) {
 function cardStats(issue) {
   const assignees = (issue.assignees || [])
     .slice(0, 3)
-    .map((user) => `<img class="avatar" src="${escapeHtml(user.avatar_url)}&s=40" alt="${escapeHtml(user.login)}" title="${escapeHtml(user.login)}" width="20" height="20" loading="lazy">`)
+    .map((user) => `<img class="avatar" src="${escapeHtml(user.avatar_url)}" alt="${escapeHtml(user.login)}" title="${escapeHtml(user.login)}" width="20" height="20" loading="lazy">`)
     .join("");
   const progress = subIssueProgress(issue);
   const parts = [];
