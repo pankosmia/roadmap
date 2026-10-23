@@ -187,16 +187,21 @@ h1 {
 }
 
 .board {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(245px, 1fr));
-  align-items: start;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
   gap: 14px;
   overflow-x: auto;
   padding: 1px 1px 18px;
 }
 
 .column {
-  min-height: 290px;
+  display: flex;
+  flex: 1 1 245px;
+  flex-direction: column;
+  min-width: 245px;
+  max-height: calc(100vh - 160px);
+  min-height: 120px;
   overflow: hidden;
   border: 1px solid #e3e5ec;
   border-radius: 11px;
@@ -264,6 +269,7 @@ h1 {
 }
 
 .issue-list {
+  overflow-y: auto;
   display: grid;
   gap: 9px;
   padding: 10px;
@@ -516,11 +522,11 @@ footer a {
   }
 
   .board {
-    grid-template-columns: repeat(4, minmax(260px, 82vw));
     scroll-snap-type: x mandatory;
   }
 
   .column {
+    flex-basis: 82vw;
     scroll-snap-align: start;
   }
 
@@ -554,9 +560,6 @@ footer a {
   text-decoration: underline;
 }
 
-body[data-page="detail"] .board {
-  grid-template-columns: repeat(4, minmax(245px, 1fr));
-}
 
 body[data-page="detail"] .column-dot {
   background: var(--purple);
@@ -582,4 +585,88 @@ body[data-page="detail"] .column-dot {
 .subissue-link {
   display: block;
   padding: 4px 0 4px 12px;
+}
+
+.column-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collapse-button {
+  padding: 2px 6px;
+  border: 1px solid #e1e2e8;
+  border-radius: 6px;
+  background: #fff;
+  color: #515768;
+  cursor: pointer;
+}
+
+.column-heading {
+  flex: none;
+}
+
+.column.collapsed {
+  flex: 0 0 170px;
+  min-width: 170px;
+  min-height: 0;
+}
+
+.column.collapsed .issue-list {
+  display: none;
+}
+
+.column.collapsed .column-heading {
+  border-bottom: 0;
+}
+
+.search-input {
+  flex: 0 1 320px;
+  min-width: 160px;
+  padding: 7px 10px;
+  border: 1px solid #e1e2e8;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.card-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 9px;
+  color: #6b7080;
+  font-size: 11px;
+}
+
+.avatars {
+  display: flex;
+}
+
+.avatar {
+  width: 20px;
+  height: 20px;
+  margin-right: -5px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+}
+
+.drop-indicator {
+  height: 4px;
+  border-radius: 2px;
+  background: #8279e2;
+}
+
+.undo-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #222638;
+  color: #fff;
+  font-size: 13px;
 }

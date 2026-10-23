@@ -36,6 +36,7 @@
 
       <section class="board-toolbar" aria-label="Board information">
         <p id="board-summary" role="status" aria-live="polite">Loading issues…</p>
+        <input id="search-input" class="search-input" type="search" placeholder="Search issue titles and text" aria-label="Search issue titles and text" autocomplete="off">
         <p class="board-hint">Drag an issue to move it, or use its move menu.</p>
       </section>
 
@@ -53,7 +54,7 @@
         <p class="dialog-copy">Viewing is public. To move issues, connect a GitHub personal access token with Issues read and write access to the repositories you want to edit.</p>
         <label for="token-input">Personal access token</label>
         <input id="token-input" name="token" type="password" autocomplete="off" spellcheck="false" required>
-        <p class="token-note">Your token stays in this browser tab and is cleared when you disconnect or close the page.</p>
+        <p class="token-note">Your token is saved for this browser session only and is cleared when you disconnect or close the tab.</p>
         <p id="auth-error" class="auth-error" role="alert" hidden></p>
         <div class="dialog-actions">
           <button id="cancel-auth" class="button button-secondary" type="button">Cancel</button>

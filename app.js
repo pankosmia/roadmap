@@ -29,6 +29,11 @@ const submitAuth = document.querySelector("#submit-auth");
 let accessToken = "";
 let issues = [];
 let isLoading = false;
+let searchTerm = "";
+let undoTimer = 0;
+const collapsedColumns = new Set();
+const TOKEN_KEY = "roadmap-token";
+const searchInput = document.querySelector("#search-input");
 
 function requestHeaders(token = "") {
   const headers = {
@@ -167,9 +172,18 @@ function isNestedSubIssue(issue) {
   return Boolean(issue.parent_issue_url) && issues.some((item) => item.url === issue.parent_issue_url);
 }
 
+function matchesText(issue) {
+  return `${issue.title} ${issue.body || ""}`.toLowerCase().includes(searchTerm);
+}
+
+function matchesSearch(issue) {
+  if (!searchTerm) return true;
+  return matchesText(issue) || subIssuesOf(issue).some(matchesText);
+}
+
 function renderBoard() {
   board.replaceChildren();
-  const topLevelIssues = issues.filter((issue) => !isNestedSubIssue(issue));
+  const topLevelIssues = issues.filter((issue) => !isNestedSubIssue(issue) && matchesSearch(issue));
   const visibleIssues = detailVersion ? topLevelIssues.filter((issue) => issueVersion(issue) === detailVersion) : topLevelIssues;
   for (const version of COLUMNS) {
     const columnIssues = visibleIssues.filter((issue) => issueColumn(issue) === version);
@@ -183,18 +197,35 @@ function renderBoard() {
           <span class="column-dot" aria-hidden="true"></span>
           <h2>${!detailVersion && DETAIL_VERSIONS.includes(version) ? `<a class="column-link" href="detail.html?version=${version}">${version}</a>` : escapeHtml(version)}</h2>
         </div>
-        <span class="issue-count">${columnIssues.length}</span>
+        <div class="column-actions">
+          <span class="issue-count">${columnIssues.length}</span>
+          <button class="collapse-button" type="button" aria-expanded="true" aria-label="Collapse ${escapeHtml(version)}">▾</button>
+        </div>
       </header>
       <div class="issue-list" data-drop-version="${escapeHtml(version)}"></div>
     `;
     column.dataset.dropVersion = version;
+    const collapseButton = column.querySelector(".collapse-button");
+    const applyCollapsed = () => {
+      const collapsed = collapsedColumns.has(version);
+      column.classList.toggle("collapsed", collapsed);
+      collapseButton.setAttribute("aria-expanded", String(!collapsed));
+      collapseButton.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${version}`);
+      collapseButton.textContent = collapsed ? "▸" : "▾";
+    };
+    collapseButton.addEventListener("click", () => {
+      if (collapsedColumns.has(version)) collapsedColumns.delete(version);
+      else collapsedColumns.add(version);
+      applyCollapsed();
+    });
+    applyCollapsed();
     column.addEventListener("dragover", onDragOver);
     column.addEventListener("dragleave", onDragLeave);
     column.addEventListener("drop", onDrop);
     const issueList = column.querySelector(".issue-list");
 
     if (columnIssues.length === 0) {
-      issueList.innerHTML = '<p class="empty-column">No issues in this ${detailVersion ? "stage" : "version"}</p>';
+      issueList.innerHTML = '<p class="empty-column">No issues.</p>';
     } else {
       for (const issue of columnIssues) issueList.append(createIssueCard(issue));
     }
@@ -202,10 +233,32 @@ function renderBoard() {
   }
 }
 
+function subIssueProgress(issue) {
+  const summary = issue.sub_issues_summary;
+  if (summary && summary.total > 0) return { done: summary.completed, total: summary.total };
+  const loaded = subIssuesOf(issue).length;
+  return loaded > 0 ? { done: 0, total: loaded } : null;
+}
+
+function cardStats(issue) {
+  const assignees = (issue.assignees || [])
+    .slice(0, 3)
+    .map((user) => `<img class="avatar" src="${escapeHtml(user.avatar_url)}&s=40" alt="${escapeHtml(user.login)}" title="${escapeHtml(user.login)}" width="20" height="20" loading="lazy">`)
+    .join("");
+  const progress = subIssueProgress(issue);
+  const parts = [];
+  if (assignees) parts.push(`<span class="avatars">${assignees}</span>`);
+  parts.push(`<span class="stat" title="Comments">💬 ${issue.comments || 0}</span>`);
+  if (progress) {
+    parts.push(`<span class="stat" title="Subissues completed">☑ ${progress.done}/${progress.total}</span>`);
+  }
+  return `<div class="card-stats">${parts.join("")}</div>`;
+}
+
 function createIssueCard(issue) {
   const card = document.createElement("article");
   card.className = "issue-card";
-  card.draggable = true;
+  card.draggable = Boolean(accessToken);
   card.dataset.issueId = issue.id;
   card.addEventListener("dragstart", onDragStart);
   card.addEventListener("dragend", onDragEnd);
@@ -225,6 +278,7 @@ function createIssueCard(issue) {
     </div>
     <a class="issue-title" href="${escapeHtml(issue.html_url)}">${escapeHtml(issue.title)}</a>
     ${labels ? `<div class="issue-labels" aria-label="Issue labels">${labels}</div>` : ""}
+    ${cardStats(issue)}
     <div class="card-footer">
       <label class="move-label" for="move-${issue.id}">Move to</label>
       <select class="move-select" id="move-${issue.id}" aria-label="Move issue #${number} to ${detailVersion ? "stage" : "version"}" ${accessToken ? "" : "disabled"}>
@@ -238,7 +292,8 @@ function createIssueCard(issue) {
     const accordion = document.createElement("details");
     accordion.className = "subissues";
     const accordionSummary = document.createElement("summary");
-    accordionSummary.textContent = `Subissues (${subIssues.length})`;
+    const progress = subIssueProgress(issue);
+    accordionSummary.textContent = `Subissues (${progress ? `${progress.done}/${progress.total}` : subIssues.length})`;
     accordion.append(accordionSummary);
     for (const subIssue of subIssues) {
       const item = document.createElement("a");
@@ -258,7 +313,6 @@ function createIssueCard(issue) {
 function onDragStart(event) {
   if (!accessToken) {
     event.preventDefault();
-    openAuthDialog();
     return;
   }
   event.dataTransfer.setData("text/plain", event.currentTarget.dataset.issueId);
@@ -269,17 +323,39 @@ function onDragStart(event) {
 function onDragEnd(event) {
   event.currentTarget.classList.remove("dragging");
   document.querySelectorAll(".column.drag-over").forEach((column) => column.classList.remove("drag-over"));
+  removeDropIndicator();
+}
+
+function removeDropIndicator() {
+  document.querySelectorAll(".drop-indicator").forEach((indicator) => indicator.remove());
+}
+
+function showDropIndicator(column, y) {
+  const list = column.querySelector(".issue-list");
+  let indicator = list.querySelector(".drop-indicator");
+  if (!indicator) {
+    removeDropIndicator();
+    indicator = document.createElement("div");
+    indicator.className = "drop-indicator";
+  }
+  const cards = [...list.querySelectorAll(".issue-card:not(.dragging)")];
+  const next = cards.find((card) => y < card.getBoundingClientRect().top + card.offsetHeight / 2);
+  if (next) list.insertBefore(indicator, next);
+  else list.append(indicator);
 }
 
 function onDragOver(event) {
   event.preventDefault();
   event.dataTransfer.dropEffect = "move";
-  event.currentTarget.closest(".column").classList.add("drag-over");
+  const column = event.currentTarget.closest(".column");
+  column.classList.add("drag-over");
+  if (!column.classList.contains("collapsed")) showDropIndicator(column, event.clientY);
 }
 
 function onDragLeave(event) {
   if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) {
     event.currentTarget.closest(".column").classList.remove("drag-over");
+    removeDropIndicator();
   }
 }
 
@@ -289,6 +365,7 @@ async function onDrop(event) {
   const issueId = Number(event.dataTransfer.getData("text/plain"));
   const issue = issues.find((item) => item.id === issueId);
   event.currentTarget.closest(".column").classList.remove("drag-over");
+  removeDropIndicator();
   if (issue && version) await moveIssue(issue, version);
 }
 
@@ -297,7 +374,8 @@ async function moveIssue(issue, version) {
     openAuthDialog();
     return;
   }
-  if (!COLUMNS.includes(version) || issueColumn(issue) === version) return;
+  const previous = issueColumn(issue);
+  if (!COLUMNS.includes(version) || previous === version) return;
 
   const [owner, repository] = issue.repository_url.split("/").slice(-2);
   let labels;
@@ -335,10 +413,32 @@ async function moveIssue(issue, version) {
     if (index !== -1) issues[index] = updated;
     renderBoard();
     summary.textContent = summaryText();
+    showUndo(updated, previous);
   } catch (error) {
     showNotice(`Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`, true);
     renderBoard();
   }
+}
+
+function showUndo(issue, previousColumn) {
+  clearTimeout(undoTimer);
+  document.querySelector(".undo-toast")?.remove();
+  const toast = document.createElement("div");
+  toast.className = "undo-toast";
+  toast.setAttribute("role", "status");
+  const text = document.createElement("span");
+  text.textContent = `Moved #${issue.number} to ${issueColumn(issue)}.`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "button button-secondary";
+  button.textContent = "Undo";
+  button.addEventListener("click", () => {
+    toast.remove();
+    moveIssue(issue, previousColumn);
+  });
+  toast.append(text, button);
+  document.body.append(toast);
+  undoTimer = setTimeout(() => toast.remove(), 8000);
 }
 
 function showNotice(message, isError = false) {
@@ -369,6 +469,7 @@ async function connectToken(event) {
   try {
     const user = await githubRequest(`${API_ROOT}/user`, {}, candidate);
     accessToken = candidate;
+    sessionStorage.setItem(TOKEN_KEY, candidate);
     tokenInput.value = "";
     authStatus.textContent = `Connected as @${user.login}`;
     authButton.textContent = "Disconnect";
@@ -385,6 +486,7 @@ async function connectToken(event) {
 
 function disconnectToken() {
   accessToken = "";
+  sessionStorage.removeItem(TOKEN_KEY);
   tokenInput.value = "";
   authStatus.textContent = "Read-only";
   authButton.textContent = "Connect GitHub";
@@ -409,4 +511,24 @@ authForm.addEventListener("submit", connectToken);
 closeDialog.addEventListener("click", closeAuthDialog);
 cancelAuth.addEventListener("click", closeAuthDialog);
 
+searchInput.addEventListener("input", () => {
+  searchTerm = searchInput.value.trim().toLowerCase();
+  if (issues.length > 0) renderBoard();
+});
+
+async function restoreToken() {
+  const saved = sessionStorage.getItem(TOKEN_KEY);
+  if (!saved) return;
+  try {
+    const user = await githubRequest(`${API_ROOT}/user`, {}, saved);
+    accessToken = saved;
+    authStatus.textContent = `Connected as @${user.login}`;
+    authButton.textContent = "Disconnect";
+    renderBoard();
+  } catch {
+    sessionStorage.removeItem(TOKEN_KEY);
+  }
+}
+
 loadIssues();
+restoreToken();
