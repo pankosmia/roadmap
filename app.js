@@ -159,9 +159,18 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function subIssuesOf(parent) {
+  return issues.filter((issue) => issue.parent_issue_url === parent.url);
+}
+
+function isNestedSubIssue(issue) {
+  return Boolean(issue.parent_issue_url) && issues.some((item) => item.url === issue.parent_issue_url);
+}
+
 function renderBoard() {
   board.replaceChildren();
-  const visibleIssues = detailVersion ? issues.filter((issue) => issueVersion(issue) === detailVersion) : issues;
+  const topLevelIssues = issues.filter((issue) => !isNestedSubIssue(issue));
+  const visibleIssues = detailVersion ? topLevelIssues.filter((issue) => issueVersion(issue) === detailVersion) : topLevelIssues;
   for (const version of COLUMNS) {
     const columnIssues = visibleIssues.filter((issue) => issueColumn(issue) === version);
     const column = document.createElement("section");
@@ -214,7 +223,7 @@ function createIssueCard(issue) {
       <span class="repo-name" title="${escapeHtml(repository)}">${escapeHtml(repository)}</span>
       <span class="issue-number">#${number}</span>
     </div>
-    <a class="issue-title" href="${escapeHtml(issue.html_url)}" target="_blank" rel="noreferrer">${escapeHtml(issue.title)}</a>
+    <a class="issue-title" href="${escapeHtml(issue.html_url)}">${escapeHtml(issue.title)}</a>
     ${labels ? `<div class="issue-labels" aria-label="Issue labels">${labels}</div>` : ""}
     <div class="card-footer">
       <label class="move-label" for="move-${issue.id}">Move to</label>
@@ -223,6 +232,23 @@ function createIssueCard(issue) {
       </select>
     </div>
   `;
+
+  const subIssues = subIssuesOf(issue);
+  if (subIssues.length > 0) {
+    const accordion = document.createElement("details");
+    accordion.className = "subissues";
+    const accordionSummary = document.createElement("summary");
+    accordionSummary.textContent = `Subissues (${subIssues.length})`;
+    accordion.append(accordionSummary);
+    for (const subIssue of subIssues) {
+      const item = document.createElement("a");
+      item.className = "subissue-link";
+      item.href = subIssue.html_url;
+      item.textContent = `#${subIssue.number} ${subIssue.title}`;
+      accordion.append(item);
+    }
+    card.insertBefore(accordion, card.querySelector(".card-footer"));
+  }
 
   const select = card.querySelector(".move-select");
   select.addEventListener("change", () => moveIssue(issue, select.value));

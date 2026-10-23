@@ -561,3 +561,25 @@ body[data-page="detail"] .board {
 body[data-page="detail"] .column-dot {
   background: var(--purple);
 }
+
+.back-button {
+  display: inline-block;
+  margin-bottom: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.subissues {
+  margin: 8px 0;
+  font-size: 0.875rem;
+}
+
+.subissues summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.subissue-link {
+  display: block;
+  padding: 4px 0 4px 12px;
+}
