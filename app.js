@@ -22,11 +22,11 @@ const authDialog = document.querySelector("#auth-dialog");
 const authForm = document.querySelector("#auth-form");
 const tokenInput = document.querySelector("#token-input");
 const authError = document.querySelector("#auth-error");
-const closeDialog = document.querySelector("#close-dialog");
 const cancelAuth = document.querySelector("#cancel-auth");
 const submitAuth = document.querySelector("#submit-auth");
 const rememberInput = document.querySelector("#remember-input");
 const addButton = document.querySelector("#add-button");
+const LOADING_HTML = '<div class="loading-state"><md-circular-progress indeterminate aria-label="Loading"></md-circular-progress><span>Loading Pankosmia issues…</span></div>';
 
 let accessToken = "";
 let issues = [];
@@ -120,7 +120,7 @@ async function loadIssues() {
   isLoading = true;
   refreshButton.disabled = true;
   notice.hidden = true;
-  board.innerHTML = '<div class="loading-state">Loading Pankosmia issues…</div>';
+  board.innerHTML = LOADING_HTML;
   summary.textContent = "Loading issues…";
 
   try {
@@ -157,7 +157,7 @@ async function loadIssues() {
       }
     }
   } catch (error) {
-    board.innerHTML = '<div class="empty-state">Could not load issues from GitHub.</div>';
+    board.innerHTML = '<div class="empty-state"><md-icon>cloud_off</md-icon><span>Could not load issues from GitHub.</span></div>';
     summary.textContent = "Issues could not be loaded";
     showNotice(apiErrorMessage(error), true);
   } finally {
@@ -246,7 +246,7 @@ function renderBoard() {
         </div>
         <div class="column-actions">
           <span class="issue-count">${columnIssues.length}</span>
-          <button class="collapse-button" type="button" aria-expanded="true" aria-label="Collapse ${escapeHtml(version)}">▾</button>
+          <md-icon-button class="collapse-button" aria-label="Collapse ${escapeHtml(version)}"><md-icon>expand_more</md-icon></md-icon-button>
         </div>
       </header>
       <div class="issue-list" data-drop-version="${escapeHtml(version)}"></div>
@@ -256,9 +256,8 @@ function renderBoard() {
     const applyCollapsed = () => {
       const collapsed = collapsedColumns.has(version);
       column.classList.toggle("collapsed", collapsed);
-      collapseButton.setAttribute("aria-expanded", String(!collapsed));
       collapseButton.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${version}`);
-      collapseButton.textContent = collapsed ? "▸" : "▾";
+      collapseButton.querySelector("md-icon").textContent = collapsed ? "chevron_right" : "expand_more";
     };
     collapseButton.addEventListener("click", () => {
       if (collapsedColumns.has(version)) collapsedColumns.delete(version);
@@ -273,7 +272,7 @@ function renderBoard() {
     const issueList = column.querySelector(".issue-list");
 
     if (columnIssues.length === 0) {
-      issueList.innerHTML = '<p class="empty-column">No issues.</p>';
+      issueList.innerHTML = '<p class="empty-column"><md-icon>inbox</md-icon>No issues</p>';
     } else {
       for (const issue of columnIssues) issueList.append(createIssueCard(issue));
     }
@@ -291,14 +290,14 @@ function subIssueProgress(issue) {
 function cardStats(issue) {
   const assignees = (issue.assignees || [])
     .slice(0, 3)
-    .map((user) => `<img class="avatar" src="${escapeHtml(user.avatar_url)}" alt="${escapeHtml(user.login)}" title="${escapeHtml(user.login)}" width="20" height="20" loading="lazy">`)
+    .map((user) => `<img class="avatar" src="${escapeHtml(user.avatar_url)}" alt="${escapeHtml(user.login)}" title="${escapeHtml(user.login)}" width="24" height="24" loading="lazy">`)
     .join("");
   const progress = subIssueProgress(issue);
   const parts = [];
   if (assignees) parts.push(`<span class="avatars">${assignees}</span>`);
-  parts.push(`<span class="stat" title="Comments">💬 ${issue.comments || 0}</span>`);
+  parts.push(`<span class="stat" title="Comments"><md-icon>chat_bubble</md-icon>${issue.comments || 0}</span>`);
   if (progress) {
-    parts.push(`<span class="stat" title="Subissues completed">☑ ${progress.done}/${progress.total}</span>`);
+    parts.push(`<span class="stat" title="Subissues completed"><md-icon>checklist</md-icon>${progress.done}/${progress.total}</span>`);
   }
   return `<div class="card-stats">${parts.join("")}</div>`;
 }
@@ -327,10 +326,10 @@ function createIssueCard(issue) {
     ${labels ? `<div class="issue-labels" aria-label="Issue labels">${labels}</div>` : ""}
     ${cardStats(issue)}
     <div class="card-footer">
-      <label class="move-label" for="move-${issue.id}">Move to</label>
-      <select class="move-select" id="move-${issue.id}" aria-label="Move issue #${number} to ${detailVersion ? "stage" : "version"}" ${accessToken ? "" : "disabled"}>
-        ${COLUMNS.map((column) => `<option value="${escapeHtml(column)}" ${issueColumn(issue) === column ? "selected" : ""}>${escapeHtml(column)}</option>`).join("")}
-      </select>
+      <md-text-button class="move-button" data-issue-id="${issue.id}" trailing-icon aria-label="Move issue #${number} to ${detailVersion ? "stage" : "version"}" ${accessToken ? "" : "disabled"}>
+        Move to
+        <md-icon slot="icon">arrow_drop_down</md-icon>
+      </md-text-button>
     </div>
   `;
 
@@ -354,9 +353,31 @@ function createIssueCard(issue) {
   }
 
   card.querySelector(".issue-title").addEventListener("click", () => openPanel(issue));
-  const select = card.querySelector(".move-select");
-  select.addEventListener("change", () => moveIssue(issue, select.value));
+  const moveButton = card.querySelector(".move-button");
+  moveButton.addEventListener("click", () => openMoveMenu(issue, moveButton));
   return card;
+}
+
+let moveMenu = null;
+
+function openMoveMenu(issue, anchor) {
+  if (!moveMenu) {
+    moveMenu = document.createElement("md-menu");
+    moveMenu.setAttribute("positioning", "popover");
+    document.body.append(moveMenu);
+  }
+  moveMenu.anchorElement = anchor;
+  const current = issueColumn(issue);
+  moveMenu.replaceChildren(
+    ...COLUMNS.map((column) => {
+      const item = document.createElement("md-menu-item");
+      if (column === current) item.setAttribute("selected", "");
+      item.innerHTML = `<md-icon slot="start">${column === current ? "check" : ""}</md-icon><div slot="headline">${escapeHtml(column)}</div>`;
+      item.addEventListener("click", () => moveIssue(issue, column));
+      return item;
+    })
+  );
+  moveMenu.open = true;
 }
 
 function onDragStart(event) {
@@ -442,9 +463,8 @@ async function moveIssue(issue, version) {
     if (DETAIL_VERSIONS.includes(version) && !hasFlow) labels.push(flowLabelName(DEFAULT_FLOW));
   }
 
-  const selects = document.querySelectorAll(`.move-select[id="move-${issue.id}"]`);
-  selects.forEach((select) => {
-    select.disabled = true;
+  document.querySelectorAll(`.move-button[data-issue-id="${issue.id}"]`).forEach((button) => {
+    button.disabled = true;
   });
   notice.hidden = true;
 
@@ -472,15 +492,13 @@ async function moveIssue(issue, version) {
 
 function showUndo(issue, previousColumn) {
   clearTimeout(undoTimer);
-  document.querySelector(".undo-toast")?.remove();
+  document.querySelector(".snackbar")?.remove();
   const toast = document.createElement("div");
-  toast.className = "undo-toast";
+  toast.className = "snackbar";
   toast.setAttribute("role", "status");
   const text = document.createElement("span");
   text.textContent = `Moved #${issue.number} to ${issueColumn(issue)}.`;
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "button button-secondary";
+  const button = document.createElement("md-text-button");
   button.textContent = "Undo";
   button.addEventListener("click", () => {
     toast.remove();
@@ -497,11 +515,22 @@ function showNotice(message, isError = false) {
   notice.hidden = false;
 }
 
+function clearTokenField() {
+  tokenInput.value = "";
+  tokenInput.reset?.();
+}
+
+function setAuthState(login) {
+  authStatus.textContent = login ? `Connected as @${login}` : "Read-only";
+  authStatus.classList.toggle("connected", Boolean(login));
+  authButton.textContent = login ? "Disconnect" : "Connect GitHub";
+}
+
 function openAuthDialog() {
   authError.hidden = true;
-  tokenInput.value = "";
+  clearTokenField();
   rememberInput.checked = false;
-  authDialog.showModal();
+  authDialog.show();
   tokenInput.focus();
 }
 
@@ -521,9 +550,8 @@ async function connectToken(event) {
     const user = await githubRequest(`${API_ROOT}/user`, {}, candidate);
     accessToken = candidate;
     storeToken(candidate, rememberInput.checked);
-    tokenInput.value = "";
-    authStatus.textContent = `Connected as @${user.login}`;
-    authButton.textContent = "Disconnect";
+    clearTokenField();
+    setAuthState(user.login);
     closeAuthDialog();
     renderBoard();
     refreshPanel();
@@ -539,9 +567,8 @@ async function connectToken(event) {
 function disconnectToken() {
   accessToken = "";
   clearStoredToken();
-  tokenInput.value = "";
-  authStatus.textContent = "Read-only";
-  authButton.textContent = "Connect GitHub";
+  clearTokenField();
+  setAuthState("");
   renderBoard();
   refreshPanel();
 }
@@ -550,7 +577,6 @@ const META_LABELS = ["Epic", "WIP"];
 const SINGLE_CHOICE_GROUPS = new Set(["Blocked"]);
 const labelCache = new Map();
 const assigneeCache = new Map();
-const openDropdowns = new Set();
 let panelElements = null;
 let panelIssueId = null;
 let panelMeta = { labels: null, assignees: null };
@@ -636,19 +662,17 @@ function ensurePanel() {
   panel.setAttribute("aria-label", "Issue details");
   panel.innerHTML = `
     <header class="panel-header">
+      <md-icon-button class="panel-close" aria-label="Close panel"><md-icon>close</md-icon></md-icon-button>
       <div class="panel-ref"></div>
-      <a class="panel-github-link" target="_blank" rel="noopener noreferrer">View on GitHub</a>
-      <button class="dialog-close panel-close" type="button" aria-label="Close panel">×</button>
+      <md-text-button class="panel-github-link" target="_blank">View on GitHub<md-icon slot="icon">open_in_new</md-icon></md-text-button>
     </header>
     <div class="panel-body">
       <p class="panel-error auth-error" role="alert" hidden></p>
-      <p class="panel-readonly">Connect GitHub to edit this issue.</p>
-      <label for="panel-title-input">Title</label>
-      <input id="panel-title-input" class="panel-title-input" type="text" autocomplete="off">
-      <label for="panel-description-input">Description</label>
-      <textarea id="panel-description-input" class="panel-description-input" rows="10"></textarea>
+      <p class="panel-readonly"><md-icon>lock</md-icon>Connect GitHub to edit this issue.</p>
+      <md-outlined-text-field class="panel-title-input" label="Title" type="text" autocomplete="off"></md-outlined-text-field>
+      <md-outlined-text-field class="panel-description-input" label="Description" type="textarea" rows="6"></md-outlined-text-field>
       <div class="panel-save-row">
-        <button class="button button-primary panel-save" type="button">Save</button>
+        <md-filled-button class="panel-save" type="button">Save</md-filled-button>
       </div>
       <fieldset class="panel-controls"></fieldset>
     </div>
@@ -670,7 +694,7 @@ function ensurePanel() {
   panel.querySelector(".panel-close").addEventListener("click", closePanel);
   panelElements.save.addEventListener("click", saveTitleAndDescription);
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && panelIssueId !== null && !document.querySelector("dialog[open]")) closePanel();
+    if (event.key === "Escape" && panelIssueId !== null && !document.querySelector("md-dialog[open]")) closePanel();
   });
   return panelElements;
 }
@@ -679,7 +703,6 @@ function openPanel(issue) {
   const elements = ensurePanel();
   panelIssueId = issue.id;
   panelMeta = { labels: null, assignees: null };
-  openDropdowns.clear();
   elements.title.value = issue.title;
   elements.description.value = issue.body || "";
   elements.error.hidden = true;
@@ -796,7 +819,7 @@ async function patchIssue(issue, body) {
 function missingLabelWarning(missing, repository) {
   if (!panelMeta.labels || missing.length === 0) return "";
   const text = missing.map((name) => `Expected ${name} label is missing from the ${repository} repo`).join(". ");
-  return `<span class="label-warning" role="img" tabindex="0" title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}">⚠️</span>`;
+  return `<md-icon class="label-warning" role="img" tabindex="0" title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}">warning</md-icon>`;
 }
 
 function missingFrom(expected) {
@@ -819,34 +842,35 @@ function renderPanelControls() {
   const version = issueVersion(issue);
   const flow = FLOWS.find((item) => names.includes(flowLabelName(item))) || (version === "Unassigned" ? "" : DEFAULT_FLOW);
   const flowOptions = version === "Unassigned" ? ["", ...FLOWS] : FLOWS;
-  const option = (value, text, selected) => `<option value="${escapeHtml(value)}" ${selected ? "selected" : ""}>${escapeHtml(text)}</option>`;
+  const locked = !accessToken || panelBusy;
+  const disabled = locked ? "disabled" : "";
+  const option = (value, text, selected) => `<md-select-option value="${escapeHtml(value)}" ${selected ? "selected" : ""}><div slot="headline">${escapeHtml(text)}</div></md-select-option>`;
+  const select = (id, label, options, warning = "") => `
+    <div class="control select-control">
+      <md-outlined-select id="${id}" label="${label}" ${disabled}>${options}</md-outlined-select>
+      ${warning}
+    </div>`;
 
   const metaSwitches = META_LABELS.map((meta) => {
     const labelName = `Meta : ${meta}`;
     const checked = names.some((name) => hasPrefix(name, "Meta") && labelValue(name).toLowerCase() === meta.toLowerCase());
     return `
       <label class="switch-row">
-        <input type="checkbox" role="switch" data-meta="${meta}" ${checked ? "checked" : ""}>
-        <span class="switch-track" aria-hidden="true"></span>
+        <md-switch data-meta="${meta}" aria-label="${meta}" ${checked ? "selected" : ""} ${disabled}></md-switch>
         <span>${meta}</span>
         ${missingLabelWarning(missingFrom([labelName]), repository)}
       </label>`;
   }).join("");
 
-  const multiGroup = (prefix) => {
+  const chipGroup = (prefix) => {
     const options = groupOptions(issue, prefix);
-    const selected = names.filter((name) => hasPrefix(name, prefix));
-    const summaryText = selected.length ? selected.map(labelValue).join(", ") : "None";
     return `
       <div class="control">
         <span class="control-label">${prefix}</span>
-        <details class="multi-select" data-group="${prefix}" ${openDropdowns.has(prefix) ? "open" : ""}>
-          <summary>${escapeHtml(summaryText)}</summary>
-          <div class="multi-options">
-            ${options.length === 0 ? '<p class="empty-column">No labels in this repo.</p>' : options.map((name) => `
-              <label class="check-row"><input type="checkbox" data-group-label="${escapeHtml(name)}" data-prefix="${prefix}" ${names.includes(name) ? "checked" : ""}> ${escapeHtml(labelValue(name))}</label>`).join("")}
-          </div>
-        </details>
+        ${options.length === 0 ? '<p class="empty-note">No labels in this repo.</p>' : `
+        <md-chip-set aria-label="${prefix}">
+          ${options.map((name) => `<md-filter-chip label="${escapeHtml(labelValue(name))}" data-group-label="${escapeHtml(name)}" ${names.includes(name) ? "selected" : ""} ${disabled}></md-filter-chip>`).join("")}
+        </md-chip-set>`}
       </div>`;
   };
 
@@ -857,47 +881,34 @@ function renderPanelControls() {
   const assigned = issue.assignees || [];
   const assigneeUsers = [...assignable];
   for (const user of assigned) if (!assigneeUsers.some((item) => item.login === user.login)) assigneeUsers.push(user);
-  const assigneeSummary = assigned.length ? assigned.map((user) => `@${user.login}`).join(", ") : "No one assigned";
 
-  panelElements.controls.disabled = !accessToken || panelBusy;
+  let assigneeRows;
+  if (panelMeta.assignees === null) assigneeRows = '<md-circular-progress indeterminate aria-label="Loading assignees"></md-circular-progress>';
+  else if (assigneeUsers.length === 0) assigneeRows = '<p class="empty-note">No assignable users.</p>';
+  else {
+    assigneeRows = `<div class="assignee-list">${assigneeUsers.map((user) => `
+      <label class="check-row"><md-checkbox data-assignee="${escapeHtml(user.login)}" ${assigned.some((item) => item.login === user.login) ? "checked" : ""} ${disabled}></md-checkbox>
+        <img class="avatar" src="${escapeHtml(user.avatar_url)}" alt="" width="24" height="24"> ${escapeHtml(user.login)}</label>`).join("")}</div>`;
+  }
+
+  panelElements.controls.disabled = locked;
   panelElements.controls.innerHTML = `
     <section class="workflow-section">
       <h3>Workflow</h3>
-      <div class="control">
-        <label class="control-label" for="panel-version">Version ${missingLabelWarning(missingFrom(VERSIONS.map((item) => VERSION_LABELS.get(item))), repository)}</label>
-        <select id="panel-version">${VERSIONS.map((item) => option(item, item, item === version)).join("")}</select>
-      </div>
-      <div class="control">
-        <label class="control-label" for="panel-flow">Flow ${missingLabelWarning(missingFrom(FLOWS.map(flowLabelName)), repository)}</label>
-        <select id="panel-flow">${flowOptions.map((item) => option(item, item || "— None —", item === flow)).join("")}</select>
-      </div>
+      ${select("panel-version", "Version", VERSIONS.map((item) => option(item, item, item === version)).join(""), missingLabelWarning(missingFrom(VERSIONS.map((item) => VERSION_LABELS.get(item))), repository))}
+      ${select("panel-flow", "Flow", flowOptions.map((item) => option(item, item || "— None —", item === flow)).join(""), missingLabelWarning(missingFrom(FLOWS.map(flowLabelName)), repository))}
     </section>
     <section class="other-section">
       <h3>Labels</h3>
       <div class="switches">${metaSwitches}</div>
-      ${multiGroup("Priority")}
-      ${multiGroup("Type")}
-      ${multiGroup("Stack")}
-      <div class="control">
-        <label class="control-label" for="panel-blocked">Blocked</label>
-        <select id="panel-blocked">
-          ${option("", "None", blockedCurrent === "")}
-          ${blockedOptions.map((name) => option(name, labelValue(name), name === blockedCurrent)).join("")}
-        </select>
-      </div>
+      ${chipGroup("Priority")}
+      ${chipGroup("Type")}
+      ${chipGroup("Stack")}
+      ${select("panel-blocked", "Blocked", option("", "None", blockedCurrent === "") + blockedOptions.map((name) => option(name, labelValue(name), name === blockedCurrent)).join(""))}
     </section>
     <section class="other-section">
       <h3>Assignees</h3>
-      <div class="control">
-        <details class="multi-select" data-group="assignees" ${openDropdowns.has("assignees") ? "open" : ""}>
-          <summary>${escapeHtml(assigneeSummary)}</summary>
-          <div class="multi-options">
-            ${panelMeta.assignees === null ? '<p class="empty-column">Loading…</p>' : assigneeUsers.map((user) => `
-              <label class="check-row"><input type="checkbox" data-assignee="${escapeHtml(user.login)}" ${assigned.some((item) => item.login === user.login) ? "checked" : ""}>
-                <img class="avatar" src="${escapeHtml(user.avatar_url)}" alt="" width="20" height="20"> ${escapeHtml(user.login)}</label>`).join("")}
-          </div>
-        </details>
-      </div>
+      ${assigneeRows}
     </section>
   `;
   bindPanelControls(issue);
@@ -907,13 +918,6 @@ function bindPanelControls(issue) {
   const controls = panelElements.controls;
   const names = issue.labels.map((label) => label.name);
   const withoutPrefix = (prefix) => names.filter((name) => !hasPrefix(name, prefix));
-
-  controls.querySelectorAll("details").forEach((details) => {
-    details.addEventListener("toggle", () => {
-      if (details.open) openDropdowns.add(details.dataset.group);
-      else openDropdowns.delete(details.dataset.group);
-    });
-  });
 
   controls.querySelector("#panel-version").addEventListener("change", (event) => {
     const value = event.target.value;
@@ -933,16 +937,16 @@ function bindPanelControls(issue) {
     input.addEventListener("change", () => {
       const meta = input.dataset.meta.toLowerCase();
       const labels = names.filter((name) => !(hasPrefix(name, "Meta") && labelValue(name).toLowerCase() === meta));
-      if (input.checked) labels.push(`Meta : ${input.dataset.meta}`);
+      if (input.selected) labels.push(`Meta : ${input.dataset.meta}`);
       patchIssue(issue, { labels });
     });
   });
 
-  controls.querySelectorAll("[data-group-label]").forEach((input) => {
-    input.addEventListener("change", () => {
-      const name = input.dataset.groupLabel;
+  controls.querySelectorAll("[data-group-label]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const name = chip.dataset.groupLabel;
       const labels = names.filter((item) => item !== name);
-      if (input.checked) labels.push(name);
+      if (chip.selected) labels.push(name);
       patchIssue(issue, { labels });
     });
   });
@@ -978,31 +982,25 @@ async function loadOrganizationRepos() {
 
 function ensureAddDialog() {
   if (addDialog) return addDialog;
-  const dialog = document.createElement("dialog");
-  dialog.className = "auth-dialog";
+  const dialog = document.createElement("md-dialog");
   dialog.setAttribute("aria-labelledby", "add-title");
   dialog.innerHTML = `
-    <form>
-      <button class="dialog-close" type="button" aria-label="Close">×</button>
-      <p class="eyebrow">NEW ISSUE</p>
-      <h2 id="add-title">Add an issue</h2>
-      <label for="add-repo">Repository</label>
-      <select id="add-repo"></select>
-      <label for="add-title-input">Title</label>
-      <input id="add-title-input" type="text" autocomplete="off" required>
+    <div slot="headline" id="add-title">Add an issue</div>
+    <form id="add-form" slot="content">
+      <md-outlined-select id="add-repo" label="Repository"></md-outlined-select>
+      <md-outlined-text-field id="add-title-input" label="Title" type="text" autocomplete="off" required autofocus></md-outlined-text-field>
       <p class="auth-error add-error" role="alert" hidden></p>
-      <div class="dialog-actions">
-        <button class="button button-secondary add-cancel" type="button">Cancel</button>
-        <button class="button button-primary add-submit" type="submit">Create</button>
-      </div>
     </form>
+    <div slot="actions">
+      <md-text-button class="add-cancel" type="button">Cancel</md-text-button>
+      <md-filled-button class="add-submit" type="submit" form="add-form">Create</md-filled-button>
+    </div>
   `;
   document.body.append(dialog);
   const form = dialog.querySelector("form");
   const error = dialog.querySelector(".add-error");
   const submit = dialog.querySelector(".add-submit");
   const close = () => dialog.close();
-  dialog.querySelector(".dialog-close").addEventListener("click", close);
   dialog.querySelector(".add-cancel").addEventListener("click", close);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1039,6 +1037,10 @@ function ensureAddDialog() {
   return dialog;
 }
 
+function repoOptionHtml(name) {
+  return `<md-select-option value="${escapeHtml(name)}" ${name === "roadmap" ? "selected" : ""}><div slot="headline">${escapeHtml(name)}</div></md-select-option>`;
+}
+
 async function openAddDialog() {
   if (!accessToken) {
     openAuthDialog();
@@ -1048,13 +1050,11 @@ async function openAddDialog() {
   const select = dialog.querySelector("#add-repo");
   dialog.querySelector("#add-title-input").value = "";
   dialog.querySelector(".add-error").hidden = true;
-  select.innerHTML = '<option value="roadmap">roadmap</option>';
-  dialog.showModal();
+  select.innerHTML = repoOptionHtml("roadmap");
+  dialog.show();
   dialog.querySelector("#add-title-input").focus();
   const names = await loadOrganizationRepos();
-  select.innerHTML = names
-    .map((name) => `<option value="${escapeHtml(name)}" ${name === "roadmap" ? "selected" : ""}>${escapeHtml(name)}</option>`)
-    .join("");
+  select.innerHTML = names.map(repoOptionHtml).join("");
 }
 
 if (addButton) addButton.addEventListener("click", openAddDialog);
@@ -1064,7 +1064,7 @@ if (document.body.dataset.page === "detail") {
   if (detailVersion) title.textContent = `${detailVersion} — detailed view`;
   else {
     title.textContent = "Unknown version";
-    board.innerHTML = '<div class="empty-state">Choose Backlog, Next or Current from the <a href="./">main board</a>.</div>';
+    board.innerHTML = '<div class="empty-state"><md-icon>view_column</md-icon><span>Choose Backlog, Next or Current from the <a href="./">main board</a>.</span></div>';
   }
 }
 
@@ -1074,7 +1074,6 @@ authButton.addEventListener("click", () => {
   else openAuthDialog();
 });
 authForm.addEventListener("submit", connectToken);
-closeDialog.addEventListener("click", closeAuthDialog);
 cancelAuth.addEventListener("click", closeAuthDialog);
 
 searchInput.addEventListener("input", () => {
@@ -1088,8 +1087,7 @@ async function restoreToken() {
   try {
     const user = await githubRequest(`${API_ROOT}/user`, {}, saved);
     accessToken = saved;
-    authStatus.textContent = `Connected as @${user.login}`;
-    authButton.textContent = "Disconnect";
+    setAuthState(user.login);
     renderBoard();
     refreshPanel();
   } catch {
