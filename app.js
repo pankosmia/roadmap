@@ -30,6 +30,7 @@ const LOADING_HTML = '<div class="loading-state"><md-circular-progress indetermi
 
 let accessToken = "";
 let issues = [];
+let loadFailed = false;
 let isLoading = false;
 let searchTerm = "";
 let undoTimer = 0;
@@ -103,16 +104,30 @@ async function githubRequest(url, options = {}, token = "") {
     } catch {
       // Keep the HTTP status message when the response has no JSON body.
     }
-    throw new Error(message);
+    const failure = new Error(message);
+    failure.status = response.status;
+    failure.authenticated = Boolean(token);
+    failure.rateLimited =
+      response.status === 429 ||
+      (response.status === 403 &&
+        (response.headers.get("x-ratelimit-remaining") === "0" || /rate limit/i.test(message)));
+    const reset = Number(response.headers.get("x-ratelimit-reset"));
+    const retryAfter = Number(response.headers.get("retry-after"));
+    if (retryAfter > 0) failure.retryAt = Date.now() + retryAfter * 1000;
+    else if (reset > 0) failure.retryAt = reset * 1000;
+    throw failure;
   }
   return response.json();
 }
 
 function apiErrorMessage(error) {
-  if (error.message.includes("rate limit")) {
-    return "GitHub's unauthenticated API limit has been reached. Connect a token or try again later.";
-  }
-  return error.message;
+  if (!error.rateLimited) return error.message;
+  const when = error.retryAt
+    ? ` Try again at ${new Date(error.retryAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`
+    : " Try again later.";
+  return error.authenticated
+    ? `GitHub's API limit for your token has been reached.${when}`
+    : `GitHub's unauthenticated API limit has been reached. Connect a token to raise it.${when}`;
 }
 
 async function loadIssues() {
@@ -126,7 +141,9 @@ async function loadIssues() {
   try {
     const query = encodeURIComponent(`org:${ORGANIZATION} is:issue is:open`);
     const firstPage = await githubRequest(
-      `${API_ROOT}/search/issues?q=${query}&per_page=${PAGE_SIZE}&page=1`
+      `${API_ROOT}/search/issues?q=${query}&per_page=${PAGE_SIZE}&page=1`,
+      {},
+      accessToken
     );
     const totalCount = firstPage.total_count;
     const pages = Math.ceil(Math.min(totalCount, 1000) / PAGE_SIZE);
@@ -135,12 +152,15 @@ async function loadIssues() {
     for (let page = 2; page <= pages; page += 1) {
       summary.textContent = `Loading issues… ${Math.min(results.length, totalCount)} of ${totalCount}`;
       const result = await githubRequest(
-        `${API_ROOT}/search/issues?q=${query}&per_page=${PAGE_SIZE}&page=${page}`
+        `${API_ROOT}/search/issues?q=${query}&per_page=${PAGE_SIZE}&page=${page}`,
+        {},
+        accessToken
       );
       results.push(...result.items);
     }
 
     issues = results;
+    loadFailed = false;
     renderBoard();
     refreshPanel();
     summary.textContent = summaryText();
@@ -157,6 +177,7 @@ async function loadIssues() {
       }
     }
   } catch (error) {
+    loadFailed = true;
     board.innerHTML = '<div class="empty-state"><md-icon>cloud_off</md-icon><span>Could not load issues from GitHub.</span></div>';
     summary.textContent = "Issues could not be loaded";
     showNotice(apiErrorMessage(error), true);
@@ -555,6 +576,7 @@ async function connectToken(event) {
     closeAuthDialog();
     renderBoard();
     refreshPanel();
+    if (loadFailed) loadIssues();
   } catch (error) {
     authError.textContent = `Could not connect: ${apiErrorMessage(error)}`;
     authError.hidden = false;
@@ -1090,10 +1112,10 @@ async function restoreToken() {
     setAuthState(user.login);
     renderBoard();
     refreshPanel();
-  } catch {
-    clearStoredToken();
+  } catch (error) {
+    // Keep the saved token on rate limits and network errors; only drop it when GitHub rejects it.
+    if (error.status === 401) clearStoredToken();
   }
 }
 
-loadIssues();
-restoreToken();
+restoreToken().finally(loadIssues);
