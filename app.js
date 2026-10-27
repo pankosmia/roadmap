@@ -189,8 +189,8 @@ async function loadIssues() {
 
 function summaryText() {
   const count = detailVersion ? issues.filter((issue) => issueVersion(issue) === detailVersion).length : issues.length;
-  const scope = detailVersion ? `in ${detailVersion}` : "from public Pankosmia repositories";
-  return `${count} ${count === 1 ? "issue" : "issues"} ${scope}`;
+  const scope = detailVersion ? ` in ${detailVersion}` : "";
+  return `${count} ${count === 1 ? "issue" : "issues"}${scope}`;
 }
 
 function isVersionLabel(labelName) {
