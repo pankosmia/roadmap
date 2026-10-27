@@ -31,8 +31,9 @@ labels with the selected version label; other labels are preserved.
 
 The UI follows the Material 3 design system. Components come from
 [`@material/web`](https://github.com/material-components/material-web), loaded
-from a CDN through the import map in each HTML page (`m3.js` lists the
-components in use), so there is no build step and the page needs internet access
+from a CDN through the import map in each HTML page (`m3.js` loads the single
+`all.js` entry, because a CDN bundles each component file separately and importing
+several of them registers shared elements twice), so there is no build step and the page needs internet access
 for the components and for the Roboto and Material Symbols fonts. Color roles,
 shapes, elevation and type scale are defined in `m3-theme.css` (light and dark
 schemes, generated from the seed color `#441650`), and `styles.css` holds the
