@@ -7,9 +7,27 @@ a Version label appear under **Unassigned**.
 
 The board is read-only until a user connects a GitHub personal access token with
 Issues read and write access to the repositories they want to update. The token
-is kept in page memory only and is never saved to browser storage. Moving an
-issue replaces all of its existing `Version : ...` labels with the selected
-version label; other labels are preserved.
+is kept for the browser session only, unless **Remember me** is ticked in the
+connect dialog, in which case it is stored in the browser's local storage until
+the user disconnects.
+
+Clicking an issue opens it in a right-anchored side panel (it does not open
+GitHub). Once connected, the panel lets you:
+
+- edit the title and description (with a Save button);
+- change Version and Flow (workflow dropdowns; changing Version moves the card,
+  and Flow defaults to `Flow : No Spec` when leaving Unassigned without one);
+- toggle the Epic and WIP meta labels, pick Priority, Type and Stack (multiple
+  choices) and Blocked (single choice or none);
+- add or remove assignees from the repository's assignable users.
+
+Dropdown options are read from each repository's existing labels. A warning icon
+appears when an expected label is missing from the repository. The **+ Add**
+button on the main page creates an issue (default repository: `roadmap`) in
+Unassigned and opens it in the side panel. Cards show their labels in their
+GitHub colors, without the text before the ":" (for example "Spec'd" for
+"Flow : Spec'd"). Moving an issue replaces all of its existing `Version : ...`
+labels with the selected version label; other labels are preserved.
 
 To publish Iffy, enable GitHub Pages in the repository settings and select
 **Deploy from a branch**, `main`, and `/(root)` as the source.
