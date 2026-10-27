@@ -250,6 +250,7 @@ function matchesSearch(issue) {
 }
 
 function renderBoard() {
+  closeMoveMenu();
   board.replaceChildren();
   const topLevelIssues = issues.filter((issue) => !isNestedSubIssue(issue) && matchesSearch(issue));
   const visibleIssues = detailVersion ? topLevelIssues.filter((issue) => issueVersion(issue) === detailVersion) : topLevelIssues;
@@ -263,7 +264,7 @@ function renderBoard() {
       <header class="column-heading">
         <div class="column-title-wrap">
           <span class="column-dot" aria-hidden="true"></span>
-          <h2>${!detailVersion && DETAIL_VERSIONS.includes(version) ? `<a class="column-link" href="detail.html?version=${version}">${version}</a>` : escapeHtml(version)}</h2>
+          <h2>${!detailVersion && DETAIL_VERSIONS.includes(version) ? `<a class="column-link" href="detail.html?version=${version}" aria-label="Open ${version} details">${version}<md-icon>chevron_right</md-icon></a>` : `<span class="column-title-static">${escapeHtml(version)}</span>`}</h2>
         </div>
         <div class="column-actions">
           <span class="issue-count">${columnIssues.length}</span>
@@ -380,25 +381,55 @@ function createIssueCard(issue) {
 }
 
 let moveMenu = null;
+let moveMenuIssue = null;
+let moveMenuItems = [];
+
+function createMoveMenu() {
+  moveMenu = document.createElement("md-menu");
+  moveMenu.setAttribute("positioning", "popover");
+  moveMenuItems = COLUMNS.map((column) => {
+    const item = document.createElement("md-menu-item");
+    item.dataset.column = column;
+    item.innerHTML = `<md-icon slot="start"></md-icon><div slot="headline">${escapeHtml(column)}</div>`;
+    item.addEventListener("click", () => {
+      if (moveMenuIssue) moveIssue(moveMenuIssue, column);
+    });
+    return item;
+  });
+  moveMenu.append(...moveMenuItems);
+  document.body.append(moveMenu);
+}
 
 function openMoveMenu(issue, anchor) {
-  if (!moveMenu) {
-    moveMenu = document.createElement("md-menu");
-    moveMenu.setAttribute("positioning", "popover");
-    document.body.append(moveMenu);
+  if (!moveMenu) createMoveMenu();
+  // Opening a menu that is closing, or re-anchoring an open one, makes it jump; close first and reopen after the close completes.
+  if (moveMenu.open) {
+    const sameAnchor = moveMenu.anchorElement === anchor;
+    moveMenu.addEventListener("closed", () => {
+      if (!sameAnchor) showMoveMenu(issue, anchor);
+    }, { once: true });
+    moveMenu.close();
+    return;
+  }
+  showMoveMenu(issue, anchor);
+}
+
+function showMoveMenu(issue, anchor) {
+  moveMenuIssue = issue;
+  const current = issueColumn(issue);
+  for (const item of moveMenuItems) {
+    const isCurrent = item.dataset.column === current;
+    item.toggleAttribute("selected", isCurrent);
+    item.querySelector("md-icon").textContent = isCurrent ? "check" : "";
   }
   moveMenu.anchorElement = anchor;
-  const current = issueColumn(issue);
-  moveMenu.replaceChildren(
-    ...COLUMNS.map((column) => {
-      const item = document.createElement("md-menu-item");
-      if (column === current) item.setAttribute("selected", "");
-      item.innerHTML = `<md-icon slot="start">${column === current ? "check" : ""}</md-icon><div slot="headline">${escapeHtml(column)}</div>`;
-      item.addEventListener("click", () => moveIssue(issue, column));
-      return item;
-    })
-  );
-  moveMenu.open = true;
+  requestAnimationFrame(() => {
+    moveMenu.open = true;
+  });
+}
+
+function closeMoveMenu() {
+  if (moveMenu && moveMenu.open) moveMenu.close();
 }
 
 function onDragStart(event) {
@@ -1218,3 +1249,21 @@ async function restoreToken() {
 }
 
 restoreToken().finally(loadIssues);
+
+function initThemeToggle() {
+  const options = document.querySelectorAll("[data-theme-option]");
+  const sync = () => {
+    const theme = document.documentElement.dataset.theme;
+    for (const option of options) option.setAttribute("aria-pressed", String(option.dataset.themeOption === theme));
+  };
+  for (const option of options) {
+    option.addEventListener("click", () => {
+      document.documentElement.dataset.theme = option.dataset.themeOption;
+      try { localStorage.setItem("theme", option.dataset.themeOption); } catch (error) {}
+      sync();
+    });
+  }
+  sync();
+}
+
+initThemeToggle();
