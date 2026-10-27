@@ -31,6 +31,12 @@ md-icon {
   --md-icon-size: 24px;
 }
 
+/* Hide raw ligature text and unstyled dialogs until the components have loaded. */
+md-icon:not(:defined),
+md-dialog:not(:defined) {
+  display: none;
+}
+
 /* Top app bar */
 .top-app-bar {
   position: sticky;
