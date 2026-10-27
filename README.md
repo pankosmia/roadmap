@@ -29,5 +29,14 @@ GitHub colors, without the text before the ":" (for example "Spec'd" for
 "Flow : Spec'd"). Moving an issue replaces all of its existing `Version : ...`
 labels with the selected version label; other labels are preserved.
 
+The UI follows the Material 3 design system. Components come from
+[`@material/web`](https://github.com/material-components/material-web), loaded
+from a CDN through the import map in each HTML page (`m3.js` lists the
+components in use), so there is no build step and the page needs internet access
+for the components and for the Roboto and Material Symbols fonts. Color roles,
+shapes, elevation and type scale are defined in `m3-theme.css` (light and dark
+schemes, generated from the seed color `#441650`), and `styles.css` holds the
+layout.
+
 To publish Iffy, enable GitHub Pages in the repository settings and select
 **Deploy from a branch**, `main`, and `/(root)` as the source.
