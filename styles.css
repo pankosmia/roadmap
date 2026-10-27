@@ -3,8 +3,12 @@
 }
 
 body {
+  display: flex;
+  flex-direction: column;
   min-width: 320px;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   margin: 0;
   background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
@@ -45,6 +49,7 @@ md-dialog:not(:defined) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex: none;
   gap: 16px;
   height: 64px;
   padding: 0 clamp(16px, 2.5vw, 32px);
@@ -96,23 +101,41 @@ md-dialog:not(:defined) {
 
 /* Page heading and toolbar */
 main {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
   width: 100%;
-  padding: 24px clamp(16px, 2.5vw, 32px) 28px;
+  min-height: 0;
+  padding: 12px clamp(16px, 2.5vw, 32px) 12px;
 }
 
 .page-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px 24px;
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-areas: "back text actions";
+  align-items: start;
+  gap: 8px 24px;
+}
+
+.heading-back {
+  grid-area: back;
+  justify-self: start;
+}
+
+.heading-text {
+  grid-area: text;
+  text-align: center;
 }
 
 .eyebrow {
-  margin: 0 0 4px;
+  margin-right: auto;
+  overflow: hidden;
   color: var(--md-sys-color-primary);
   font: var(--md-type-label-medium);
   letter-spacing: .1em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 h1 {
@@ -122,14 +145,15 @@ h1 {
 
 .intro {
   max-width: 620px;
-  margin: 8px 0 0;
+  margin: 4px auto 0;
   color: var(--md-sys-color-on-surface-variant);
   font: var(--md-type-body-large);
 }
 
 .heading-actions {
   display: flex;
-  flex: none;
+  grid-area: actions;
+  justify-self: end;
   gap: 8px;
 }
 
@@ -142,13 +166,18 @@ h1 {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
+  flex: none;
   gap: 12px 16px;
-  margin: 24px 0 16px;
+  margin: 12px 0;
   color: var(--md-sys-color-on-surface-variant);
 }
 
 .board-toolbar p {
   margin: 0;
+}
+
+.board-info {
+  font: var(--md-type-label-large);
 }
 
 #board-summary {
@@ -170,11 +199,13 @@ h1 {
 /* Board */
 .board {
   display: flex;
+  flex: 1 1 0;
   flex-wrap: nowrap;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 12px;
+  min-height: 0;
   overflow-x: auto;
-  padding: 2px 2px 16px;
+  padding: 2px;
 }
 
 .board > .column:first-child {
@@ -191,8 +222,7 @@ h1 {
   flex-direction: column;
   min-width: 260px;
   max-width: 420px;
-  min-height: 120px;
-  max-height: calc(100vh - 200px);
+  min-height: 0;
   overflow: hidden;
   border-radius: var(--md-sys-shape-lg);
   background: var(--md-sys-color-surface-container-low);
@@ -490,15 +520,6 @@ button.subissue-link {
   display: none !important;
 }
 
-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px clamp(16px, 2.5vw, 32px) 24px;
-  color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-type-body-small);
-}
-
 /* Dialogs */
 md-dialog {
   min-width: min(440px, calc(100vw - 48px));
@@ -748,8 +769,15 @@ md-outlined-select {
 }
 
 @media (max-width: 700px) {
-  main {
-    padding-top: 16px;
+  .page-heading {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "back actions"
+      "text text";
+  }
+
+  .eyebrow {
+    display: none;
   }
 
   .board {
@@ -768,11 +796,6 @@ md-outlined-select {
 
   .issue-panel {
     border-radius: 0;
-  }
-
-  footer {
-    flex-direction: column;
-    gap: 4px;
   }
 }
 
