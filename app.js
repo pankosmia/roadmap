@@ -603,6 +603,11 @@ let panelElements = null;
 let panelIssueId = null;
 let panelMeta = { labels: null, assignees: null };
 let panelBusy = false;
+let descriptionEditor = null;
+const PANEL_WIDTH_KEY = "roadmap-panel-width";
+const PANEL_MIN_WIDTH = 560;
+const PANEL_OVERLAY_GAP = 48;
+const PANEL_KEY_STEP = 32;
 
 function labelPrefix(labelName) {
   const match = /^\s*([^:]+?)\s*:/.exec(labelName);
@@ -688,17 +693,27 @@ function ensurePanel() {
       <div class="panel-ref"></div>
       <md-text-button class="panel-github-link" target="_blank">View on GitHub<md-icon slot="icon">open_in_new</md-icon></md-text-button>
     </header>
-    <div class="panel-body">
-      <p class="panel-error auth-error" role="alert" hidden></p>
-      <p class="panel-readonly"><md-icon>lock</md-icon>Connect GitHub to edit this issue.</p>
-      <md-outlined-text-field class="panel-title-input" label="Title" type="text" autocomplete="off"></md-outlined-text-field>
-      <md-outlined-text-field class="panel-description-input" label="Description" type="textarea" rows="6"></md-outlined-text-field>
-      <div class="panel-save-row">
-        <md-filled-button class="panel-save" type="button">Save</md-filled-button>
+    <div class="panel-content">
+      <div class="panel-main">
+        <p class="panel-error auth-error" role="alert" hidden></p>
+        <p class="panel-readonly"><md-icon>lock</md-icon>Connect GitHub to edit this issue.</p>
+        <md-outlined-text-field class="panel-title-input" label="Title" type="text" autocomplete="off"></md-outlined-text-field>
+        <div class="panel-save-row">
+          <md-filled-button class="panel-save" type="button">Save</md-filled-button>
+        </div>
       </div>
-      <fieldset class="panel-controls"></fieldset>
+      <aside class="panel-settings" aria-labelledby="panel-settings-heading">
+        <h2 class="panel-settings-heading" id="panel-settings-heading">Settings</h2>
+        <fieldset class="panel-controls"></fieldset>
+      </aside>
     </div>
+    <div class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Resize panel" tabindex="0"></div>
   `;
+  descriptionEditor = createMarkdownEditor({
+    renderPreview: renderMarkdownPreview,
+    onSubmit: saveTitleAndDescription
+  });
+  panel.querySelector(".panel-save-row").before(descriptionEditor.element);
   document.body.append(overlay, panel);
   panelElements = {
     overlay,
@@ -708,17 +723,100 @@ function ensurePanel() {
     error: panel.querySelector(".panel-error"),
     readonly: panel.querySelector(".panel-readonly"),
     title: panel.querySelector(".panel-title-input"),
-    description: panel.querySelector(".panel-description-input"),
+    resizer: panel.querySelector(".panel-resizer"),
     save: panel.querySelector(".panel-save"),
     controls: panel.querySelector(".panel-controls")
   };
   overlay.addEventListener("click", closePanel);
   panel.querySelector(".panel-close").addEventListener("click", closePanel);
   panelElements.save.addEventListener("click", saveTitleAndDescription);
+  setupPanelResizer(panel, panelElements.resizer);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && panelIssueId !== null && !document.querySelector("md-dialog[open]")) closePanel();
   });
   return panelElements;
+}
+
+function panelWidthBounds() {
+  const max = Math.max(0, window.innerWidth - PANEL_OVERLAY_GAP);
+  return { min: Math.min(PANEL_MIN_WIDTH, max), max };
+}
+
+function setPanelWidth(panel, resizer, width, persist) {
+  const { min, max } = panelWidthBounds();
+  const clamped = Math.round(Math.min(max, Math.max(min, width)));
+  panel.style.setProperty("--panel-width", `${clamped}px`);
+  resizer.setAttribute("aria-valuemin", String(min));
+  resizer.setAttribute("aria-valuemax", String(max));
+  resizer.setAttribute("aria-valuenow", String(clamped));
+  if (!persist) return;
+  try {
+    localStorage.setItem(PANEL_WIDTH_KEY, String(clamped));
+  } catch {
+    // Storage may be unavailable; the width then lasts only for this page view.
+  }
+}
+
+function setupPanelResizer(panel, resizer) {
+  let saved = PANEL_MIN_WIDTH;
+  try {
+    saved = Number(localStorage.getItem(PANEL_WIDTH_KEY)) || PANEL_MIN_WIDTH;
+  } catch {
+    // Use the minimum width when storage is unavailable.
+  }
+  setPanelWidth(panel, resizer, saved, false);
+
+  resizer.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    resizer.setPointerCapture(event.pointerId);
+    panel.classList.add("is-resizing");
+  });
+  resizer.addEventListener("pointermove", (event) => {
+    if (resizer.hasPointerCapture(event.pointerId)) setPanelWidth(panel, resizer, window.innerWidth - event.clientX, false);
+  });
+  const stopResizing = (event) => {
+    if (!resizer.hasPointerCapture(event.pointerId)) return;
+    resizer.releasePointerCapture(event.pointerId);
+    panel.classList.remove("is-resizing");
+    setPanelWidth(panel, resizer, panel.getBoundingClientRect().width, true);
+  };
+  resizer.addEventListener("pointerup", stopResizing);
+  resizer.addEventListener("pointercancel", stopResizing);
+
+  resizer.addEventListener("keydown", (event) => {
+    const current = panel.getBoundingClientRect().width;
+    const { min, max } = panelWidthBounds();
+    const widths = {
+      ArrowLeft: current + PANEL_KEY_STEP,
+      ArrowRight: current - PANEL_KEY_STEP,
+      Home: min,
+      End: max
+    };
+    if (!(event.key in widths)) return;
+    event.preventDefault();
+    setPanelWidth(panel, resizer, widths[event.key], true);
+  });
+  window.addEventListener("resize", () => {
+    if (!panel.hidden) setPanelWidth(panel, resizer, panel.getBoundingClientRect().width, false);
+  });
+}
+
+async function renderMarkdownPreview(text) {
+  const issue = currentIssue();
+  const body = { text, mode: "gfm" };
+  if (issue) body.context = repoOf(issue).join("/");
+  const response = await fetch(`${API_ROOT}/markdown`, {
+    method: "POST",
+    headers: { ...requestHeaders(accessToken), "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    const failure = new Error(`GitHub returned ${response.status}.`);
+    failure.rateLimited = response.status === 429 || (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0");
+    failure.authenticated = Boolean(accessToken);
+    throw failure.rateLimited ? new Error(apiErrorMessage(failure)) : failure;
+  }
+  return response.text();
 }
 
 function openPanel(issue) {
@@ -726,7 +824,8 @@ function openPanel(issue) {
   panelIssueId = issue.id;
   panelMeta = { labels: null, assignees: null };
   elements.title.value = issue.title;
-  elements.description.value = issue.body || "";
+  descriptionEditor.showWrite();
+  descriptionEditor.value = issue.body || "";
   elements.error.hidden = true;
   elements.overlay.hidden = false;
   elements.panel.hidden = false;
@@ -776,7 +875,7 @@ function refreshPanel() {
   panelElements.link.href = issue.html_url;
   panelElements.readonly.hidden = Boolean(accessToken);
   panelElements.title.disabled = !accessToken;
-  panelElements.description.disabled = !accessToken;
+  descriptionEditor.disabled = !accessToken;
   panelElements.save.disabled = !accessToken;
   renderPanelControls();
 }
@@ -796,11 +895,11 @@ async function saveTitleAndDescription() {
     return;
   }
   panelElements.save.textContent = "Saving…";
-  const updated = await patchIssue(issue, { title, body: panelElements.description.value });
+  const updated = await patchIssue(issue, { title, body: descriptionEditor.value });
   panelElements.save.textContent = "Save";
   if (updated) {
     panelElements.title.value = updated.title;
-    panelElements.description.value = updated.body || "";
+    descriptionEditor.value = updated.body || "";
   }
 }
 
