@@ -249,8 +249,10 @@ async function searchAllIssues(state) {
 
 function summaryText() {
   const boardIssues = issues.filter(isOnBoard);
-  const count = detailVersion ? boardIssues.filter((issue) => issueVersion(issue) === detailVersion).length : boardIssues.length;
+  const scoped = detailVersion ? boardIssues.filter((issue) => issueVersion(issue) === detailVersion) : boardIssues;
+  const count = scoped.length;
   const scope = detailVersion ? ` in ${detailVersion}` : "";
+  if (hasActiveFilters()) return `${scoped.filter(passesFilters).length} of ${count} issues${scope}`;
   return `${count} ${count === 1 ? "issue" : "issues"}${scope}`;
 }
 
@@ -337,7 +339,8 @@ async function loadColumnLabelColors() {
 function renderBoard() {
   closeMoveMenu();
   board.replaceChildren();
-  const topLevelIssues = issues.filter((issue) => isOnBoard(issue) && !isNestedSubIssue(issue) && matchesSearch(issue));
+  refreshFilterOptions();
+  const topLevelIssues = issues.filter((issue) => isOnBoard(issue) && !isNestedSubIssue(issue) && matchesSearch(issue) && passesFilters(issue));
   const visibleIssues = detailVersion ? topLevelIssues.filter((issue) => issueVersion(issue) === detailVersion) : topLevelIssues;
   for (const version of COLUMNS) {
     const columnIssues = visibleIssues.filter((issue) => issueColumn(issue) === version);
@@ -1953,6 +1956,8 @@ searchInput.addEventListener("input", () => {
   searchTerm = searchInput.value.trim().toLowerCase();
   if (issues.length > 0) renderBoard();
 });
+
+initFilters();
 
 async function restoreToken() {
   const saved = readStoredToken();

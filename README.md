@@ -63,6 +63,23 @@ GitHub colors, without the text before the ":" (for example "Spec'd" for
 "Flow : Spec'd"). Moving an issue replaces all of its existing `Version : ...`
 labels with the selected version label; other labels are preserved.
 
+Below the search bar, every page has a **View** button and two filter chips,
+**Assignee** and **Repository** (`filters.js`). Both chips are multi-select menus
+listing the assignees (plus **Unassigned**) and repositories of the loaded open
+issues, with their issue counts. A card is shown when it matches the selection of
+each chip (any selected value within a chip). A parent issue stays visible when
+one of its sub-issues matches, and the board summary reads "N of M issues" while
+filters are on. The search text is not part of the filters or of the views.
+The **View** menu offers the default (unfiltered) view, the saved views (apply,
+rename, delete), **Update** for the active view and **Save current filters as new
+view…** (named, unique names). The View button shows a colored dot when the chips
+differ from the view that was active before they were touched: the default view,
+or the saved view that was applied. Filters and views are stored in the browser's
+local storage (`roadmap-filters`) and shared by all pages.
+
+On cards and in the Done dialog, the linked pull request count is a filled badge
+in the color of the pull request state.
+
 The UI follows the Material 3 design system. Components come from
 [`@material/web`](https://github.com/material-components/material-web), loaded
 from a CDN through the import map in each HTML page (`m3.js` loads the single
