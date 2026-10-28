@@ -12,7 +12,7 @@ const DEVELOPMENT_QUERY = `query($owner: String!, $name: String!, $number: Int!)
   repository(owner: $owner, name: $name) {
     issue(number: $number) {
       closedByPullRequestsReferences(first: 25, includeClosedPrs: true) {
-        nodes { number title url state isDraft repository { nameWithOwner } }
+        nodes { ${PULL_FIELDS} }
       }
       linkedBranches(first: 25) { nodes { ref { name repository { nameWithOwner } } } }
     }
@@ -120,13 +120,9 @@ async function loadDevelopment(issue, key) {
     if (result.errors?.length) throw new Error(result.errors[0].message);
     if (panelExtras.key !== key) return;
     const data = result.data.repository.issue;
-    panelExtras.pulls = data.closedByPullRequestsReferences.nodes.map((node) => ({
-      number: node.number,
-      title: node.title,
-      url: node.url,
-      state: node.isDraft && node.state === "OPEN" ? "DRAFT" : node.state,
-      repo: node.repository.nameWithOwner
-    }));
+    panelExtras.pulls = data.closedByPullRequestsReferences.nodes.map(pullFromNode);
+    setIssuePulls(issue.id, panelExtras.pulls);
+    refreshDevelopmentIcons();
     panelExtras.branches = data.linkedBranches.nodes
       .filter((node) => node.ref)
       .map((node) => ({ name: node.ref.name, repo: node.ref.repository.nameWithOwner }));
@@ -265,13 +261,6 @@ function assigneesSectionHtml(issue, disabled) {
   return sectionHtml("Assignees", { key: "assignees", disabled }, body);
 }
 
-const PULL_STATES = {
-  OPEN: { icon: "merge_type", text: "Open", className: "state-open" },
-  DRAFT: { icon: "merge_type", text: "Draft", className: "state-draft" },
-  MERGED: { icon: "merge", text: "Merged", className: "state-merged" },
-  CLOSED: { icon: "merge_type", text: "Closed", className: "state-closed" }
-};
-
 function branchUrl(branch) {
   return `https://github.com/${branch.repo}/tree/${branch.name.split("/").map(encodeURIComponent).join("/")}`;
 }
@@ -285,15 +274,7 @@ function developmentSectionHtml(issue) {
   else if (developmentStatus === "error") body = `<p class="empty-note">Could not load development: ${escapeHtml(panelExtras.developmentError)}</p>`;
   else if (pulls.length === 0 && branches.length === 0) body = '<p class="empty-note">No branches or pull requests.</p>';
   else {
-    const pullRows = pulls.map((pull) => {
-      const state = PULL_STATES[pull.state] || PULL_STATES.OPEN;
-      return `
-        <li class="relation-row">
-          <md-icon class="${state.className}" title="${state.text}">${state.icon}</md-icon>
-          <a href="${escapeHtml(pull.url)}" target="_blank" rel="noopener"><span class="relation-title">${escapeHtml(pull.title)}</span>
-            <span class="relation-ref">${escapeHtml(pull.repo)}#${pull.number} · ${state.text}</span></a>
-        </li>`;
-    });
+    const pullRows = pulls.map(pullRowHtml);
     const branchRows = branches.map((branch) => `
         <li class="relation-row">
           <md-icon>call_split</md-icon>

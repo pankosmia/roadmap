@@ -177,6 +177,7 @@ async function loadIssues({ force = false } = {}) {
     if (Date.now() - cached.time < ISSUES_CACHE_TTL) {
       isLoading = false;
       refreshButton.disabled = false;
+      loadPullRequests();
       return;
     }
   } else {
@@ -194,6 +195,11 @@ async function loadIssues({ force = false } = {}) {
     }
     const results = [...openIssues, ...closedIssues];
 
+    // Keep the known pull requests on screen while they are refreshed.
+    const previousPulls = new Map(issues.filter((issue) => issue.pulls).map((issue) => [issue.id, issue.pulls]));
+    for (const issue of results) {
+      if (previousPulls.has(issue.id)) issue.pulls = previousPulls.get(issue.id);
+    }
     issues = results;
     saveIssuesCache();
     loadFailed = false;
@@ -201,6 +207,7 @@ async function loadIssues({ force = false } = {}) {
     renderBoard();
     refreshPanel();
     summary.textContent = summaryText();
+    loadPullRequests({ force: true });
     if (totalCount > 1000) {
       showNotice(`GitHub search can return at most 1,000 results. Showing the first 1,000 of ${totalCount} issues.`);
     } else {
@@ -397,6 +404,7 @@ function cardStats(issue) {
   if (progress) {
     parts.push(`<span class="stat" title="Subissues completed"><md-icon>checklist</md-icon>${progress.done}/${progress.total}</span>`);
   }
+  parts.push(developmentSlotHtml(issue));
   return `<div class="card-stats">${parts.join("")}</div>`;
 }
 
@@ -952,17 +960,24 @@ function renderDoneList() {
     return;
   }
   for (const issue of shown) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "duplicate-option";
+    const item = document.createElement("div");
+    item.className = "duplicate-option done-row";
     const closedOn = new Date(issue.closed_at).toLocaleDateString();
-    item.innerHTML = `${statusIconHtml(issue)}<span class="duplicate-title">${escapeHtml(issue.title)}</span><span class="duplicate-ref">${escapeHtml(repoOf(issue).join("/"))}#${issue.number} · ${closedOn}</span>`;
-    item.addEventListener("click", () => {
+    item.innerHTML = `<button type="button" class="done-open">${statusIconHtml(issue)}<span class="duplicate-title">${escapeHtml(issue.title)}</span><span class="duplicate-ref">${escapeHtml(repoOf(issue).join("/"))}#${issue.number} · ${closedOn}</span></button>${developmentTriggerHtml(issue)}`;
+    item.querySelector(".done-open").addEventListener("click", () => {
       dialog.close();
       openPanel(issue);
     });
     list.append(item);
   }
+}
+
+function refreshDoneDialog() {
+  if (!doneDialog || !doneDialog.open) return;
+  const list = doneDialog.querySelector(".done-list");
+  const scrollTop = list.scrollTop;
+  renderDoneList();
+  list.scrollTop = scrollTop;
 }
 
 function openDoneDialog() {
@@ -1019,6 +1034,7 @@ async function connectToken(event) {
     renderBoard();
     refreshPanel();
     if (loadFailed) loadIssues({ force: true });
+    else loadPullRequests({ force: true });
   } catch (error) {
     authError.textContent = `Could not connect: ${apiErrorMessage(error)}`;
     authError.hidden = false;
@@ -1034,6 +1050,7 @@ function disconnectToken() {
   clearStoredToken();
   clearTokenField();
   setAuthState("");
+  clearIssuePulls();
   renderBoard();
   refreshPanel();
 }

@@ -1474,6 +1474,7 @@ md-outlined-text-field {
   --status-open: #1a7f37;
   --status-completed: #8250df;
   --status-closed-gray: #59636e;
+  --status-closed-red: #cf222e;
   --status-open-fill: #1f883d;
   --status-completed-fill: #8250df;
   --status-gray-fill: #6e7781;
@@ -1483,6 +1484,7 @@ md-outlined-text-field {
   --status-open: #3fb950;
   --status-completed: #ab7df8;
   --status-closed-gray: #9198a1;
+  --status-closed-red: #f85149;
   --status-open-fill: #238636;
   --status-completed-fill: #8957e5;
   --status-gray-fill: #6e7681;
@@ -1497,6 +1499,74 @@ md-outlined-text-field {
 .status-completed { color: var(--status-completed); }
 .status-not-planned,
 .status-duplicate { color: var(--status-closed-gray); }
+
+/* Pull requests (Development) use the same colors as issues; a closed, unmerged one is red. */
+.pr-open { --pr-color: var(--status-open); }
+.pr-merged { --pr-color: var(--status-completed); }
+.pr-draft { --pr-color: var(--status-closed-gray); }
+.pr-closed { --pr-color: var(--status-closed-red); }
+md-icon.pr-open,
+md-icon.pr-merged,
+md-icon.pr-draft,
+md-icon.pr-closed { color: var(--pr-color); }
+
+.dev-trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--md-sys-shape-sm);
+  background: none;
+  color: var(--pr-color);
+  cursor: pointer;
+}
+
+.dev-trigger:hover { background: var(--md-sys-color-surface-container-high); }
+.dev-trigger:focus-visible { outline: 2px solid var(--pr-color); outline-offset: 1px; }
+.dev-slot { display: contents; }
+
+.dev-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.dev-icon md-icon { --md-icon-size: 18px; }
+
+.dev-count {
+  position: absolute;
+  top: -6px;
+  right: -9px;
+  min-width: 14px;
+  padding: 0 3px;
+  border: 1px solid var(--pr-color);
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container-lowest);
+  color: var(--md-sys-color-on-surface);
+  font: var(--md-type-label-small);
+  font-size: 10px;
+  line-height: 12px;
+  text-align: center;
+}
+
+.dev-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  overflow-y: auto;
+  border: 0;
+  border-radius: var(--md-sys-shape-lg);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: var(--md-elevation-3);
+}
+
+.dev-popover:not(:popover-open) { display: none; }
+.dev-popover h4 { margin: 0; font: var(--md-type-title-small); }
+.dev-popover .relation-list { gap: 8px; }
 
 .status-pill {
   display: inline-flex;
@@ -1619,6 +1689,23 @@ md-outlined-text-field {
 .duplicate-option:hover,
 .duplicate-option[aria-selected="true"] {
   background: var(--md-sys-color-secondary-container);
+}
+
+.done-row { gap: 4px; padding: 0 12px 0 0; }
+
+.done-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 0 8px 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .duplicate-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

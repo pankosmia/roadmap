@@ -27,7 +27,11 @@ GitHub). Once connected, the panel lets you:
   Tech Debt), Stack (multiple choices: Client, Server, Data, Build,
   Documentation) and Priority (optional, Tweak / Urgent / Security, click
   again to clear) in single-row connected button groups;
-- see the linked pull requests and branches (Development, read-only);
+- see the linked pull requests and branches (Development, read-only). Pull
+  request icons use the issue colors: green open, purple merged, gray draft,
+  red closed without merging. Cards and the Done dialog show one icon (merged,
+  then open, draft, closed) with the number of linked pull requests; clicking it
+  lists each pull request with its own icon and a link (needs a connected token);
 - manage Parent, Sub-issues, Blocked by and Blocking relationships, searching
   issues across the whole organization, from the Relationships heading.
 
