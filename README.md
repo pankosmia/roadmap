@@ -17,11 +17,24 @@ Clicking an issue opens it in a right-anchored side panel (it does not open
 GitHub). Once connected, the panel lets you:
 
 - edit the title and description (with a Save button);
-- change Version and Flow (workflow dropdowns; changing Version moves the card,
-  and Flow defaults to `Flow : No Spec` when leaving Unassigned without one);
-- toggle the Epic and WIP meta labels, pick Priority, Type and Stack (multiple
-  choices) and Blocked (single choice or none);
-- add or remove assignees from the repository's assignable users.
+- change Version, Flow and Blocked (chips in the Workflow area; changing Version
+  moves the card, and Flow defaults to `Flow : No Spec` when leaving Unassigned
+  without one);
+- toggle the Epic and WIP meta labels, and pick Type (exclusive), Stack
+  (multiple choices) and Priority (optional, Tweak / Urgent / Security, click
+  again to clear) in single-row connected button groups;
+- add or remove assignees from a GitHub-style popover (search, checkmarks,
+  selected users first);
+- see the linked pull requests and branches (Development, read-only);
+- manage Parent, Sub-issues, Blocked by and Blocking relationships, searching
+  issues across the whole organization.
+
+When creating an issue, Type and Stack are mandatory (marked with `*`, no
+default). Pressing **Create** with a missing title, Type or Stack turns the
+field red and focuses the first one. Existing issues without these labels are
+not blocked. Relationships chosen for a new issue are applied right after it is
+created. The Settings column is 440px wide and sits next to the description from
+a 940px panel width.
 
 Dropdown options are read from each repository's existing labels. A warning icon
 appears when an expected label is missing from the repository. The **+ Add**
