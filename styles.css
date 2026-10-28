@@ -675,6 +675,7 @@ md-outlined-select {
 }
 
 .issue-panel {
+  --panel-settings-width: 440px;
   position: fixed;
   top: 0;
   right: 0;
@@ -781,10 +782,10 @@ md-outlined-select {
   font: var(--md-type-title-medium);
 }
 
-@container (min-width: 820px) {
+@container (min-width: 940px) {
   .panel-content {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-columns: minmax(0, 1fr) var(--panel-settings-width);
     overflow: hidden;
   }
 
@@ -1021,21 +1022,101 @@ md-outlined-select {
 }
 
 .control-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-bottom: 8px;
   color: var(--md-sys-color-on-surface-variant);
   font: var(--md-type-label-large);
 }
 
-.select-control {
-  position: relative;
+.required-mark {
+  color: var(--md-sys-color-error);
 }
 
-.select-control .label-warning {
+.visually-hidden {
   position: absolute;
-  top: 50%;
-  right: 52px;
-  transform: translateY(-50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Connected button group: one row, small inner corners, full round ends and selection. */
+.connected-group {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  border-radius: 22px;
+}
+
+.connected-button {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--md-sys-shape-xs);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  font: var(--md-type-label-large);
+  cursor: pointer;
+  transition: border-radius .2s cubic-bezier(.2, 0, 0, 1), background-color .2s, color .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.connected-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connected-button:first-child {
+  border-radius: 20px var(--md-sys-shape-xs) var(--md-sys-shape-xs) 20px;
+}
+
+.connected-button:last-child {
+  border-radius: var(--md-sys-shape-xs) 20px 20px var(--md-sys-shape-xs);
+}
+
+.connected-button:only-child {
+  border-radius: 20px;
+}
+
+.connected-button[aria-pressed="true"] {
+  border-radius: 20px;
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+.connected-button:disabled {
+  opacity: .38;
+  cursor: default;
+}
+
+.has-error .connected-group {
+  outline: 2px solid var(--md-sys-color-error);
+  outline-offset: 2px;
+}
+
+.has-error .control-label,
+.field-error {
+  color: var(--md-sys-color-error);
+}
+
+.has-error .connected-button:not([aria-pressed="true"]) {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}
+
+.field-error {
+  margin: 8px 0 0;
+  font: var(--md-type-body-small);
 }
 
 .switches {
@@ -1052,28 +1133,193 @@ md-outlined-select {
   cursor: pointer;
 }
 
-.assignee-list {
-  max-height: 224px;
-  overflow-y: auto;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-md);
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  margin-bottom: 4px;
 }
 
-.check-row {
+.section-heading h3 {
+  margin: 0;
+}
+
+.section-action {
+  margin-right: -8px;
+}
+
+.person-list,
+.relation-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.person {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 12px 4px 4px;
+  color: var(--md-sys-color-on-surface);
   font: var(--md-type-body-medium);
-  cursor: pointer;
+  text-decoration: none;
 }
 
-.check-row .avatar {
+.person:hover {
+  text-decoration: underline;
+}
+
+.person .avatar,
+.picker .avatar {
   margin-right: 0;
   border-color: transparent;
 }
 
+.relation-group + .relation-group {
+  margin-top: 12px;
+}
+
+.relation-group h4 {
+  margin: 0 0 4px;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-type-label-large);
+}
+
+.relation-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.relation-row > md-icon {
+  --md-icon-size: 20px;
+  flex: none;
+}
+
+.relation-row a {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  color: var(--md-sys-color-on-surface);
+  text-decoration: none;
+}
+
+.relation-row a:hover .relation-title {
+  text-decoration: underline;
+}
+
+.relation-title {
+  overflow: hidden;
+  font: var(--md-type-body-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relation-ref {
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-type-body-small);
+}
+
+.relation-remove {
+  --md-icon-button-icon-size: 18px;
+  flex: none;
+  margin-right: -8px;
+}
+
+.state-open {
+  color: var(--md-sys-color-primary);
+}
+
+.state-merged {
+  color: var(--md-sys-color-tertiary);
+}
+
+.state-closed {
+  color: var(--md-sys-color-error);
+}
+
+.state-draft {
+  color: var(--md-sys-color-outline);
+}
+
+.picker {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+  overflow: hidden;
+  border-radius: var(--md-sys-shape-lg);
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: var(--md-elevation-3);
+}
+
+.picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 16px;
+}
+
+.picker-header h4 {
+  margin: 0;
+  font: var(--md-type-title-small);
+}
+
+.picker-hint {
+  margin: 0;
+  padding: 0 16px;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-type-body-small);
+}
+
+.picker-search {
+  width: calc(100% - 32px);
+  min-width: 0;
+  margin: 0 16px;
+}
+
+.picker-clear {
+  align-self: flex-start;
+  margin: 0 8px;
+}
+
+.picker-list {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  overflow-y: auto;
+  --md-list-container-color: transparent;
+}
+
+.picker-list md-list-item {
+  --md-list-item-leading-space: 16px;
+  --md-list-item-trailing-space: 16px;
+}
+
+.picker-list md-list-item md-icon[slot="start"] {
+  --md-icon-size: 24px;
+}
+
+.picker-check {
+  color: var(--md-sys-color-primary);
+}
+
+.picker-empty {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: 16px;
+}
+
 .empty-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin: 0;
   color: var(--md-sys-color-on-surface-variant);
   font: var(--md-type-body-small);

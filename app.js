@@ -29,6 +29,7 @@ const addButton = document.querySelector("#add-button");
 const LOADING_HTML = '<div class="loading-state"><md-circular-progress indeterminate aria-label="Loading"></md-circular-progress><span>Loading Pankosmia issues…</span></div>';
 
 let accessToken = "";
+let currentLogin = "";
 let issues = [];
 let loadFailed = false;
 let isLoading = false;
@@ -117,7 +118,7 @@ async function githubRequest(url, options = {}, token = "") {
     else if (reset > 0) failure.retryAt = reset * 1000;
     throw failure;
   }
-  return response.json();
+  return response.status === 204 ? null : response.json();
 }
 
 function apiErrorMessage(error) {
@@ -644,6 +645,7 @@ function clearTokenField() {
 }
 
 function setAuthState(login) {
+  currentLogin = login;
   authStatus.textContent = login ? `Connected as @${login}` : "Read-only";
   authStatus.classList.toggle("connected", Boolean(login));
   authButton.textContent = login ? "Disconnect" : "Connect GitHub";
@@ -700,7 +702,12 @@ function disconnectToken() {
 }
 
 const META_LABELS = ["Epic", "WIP"];
-const SINGLE_CHOICE_GROUPS = new Set(["Blocked"]);
+const PRIORITY_ORDER = ["Tweak", "Urgent", "Security"];
+const REQUIRED_GROUPS = [
+  { prefix: "Type", message: "Select a type." },
+  { prefix: "Stack", message: "Select at least one stack." }
+];
+let panelErrors = new Set();
 const labelCache = new Map();
 const assigneeCache = new Map();
 let panelElements = null;
@@ -756,6 +763,7 @@ function newDraftIssue(repository = "roadmap") {
     body: "",
     labels: [],
     assignees: [],
+    relationships: emptyRelations(),
     repository_url: `${API_ROOT}/repos/${ORGANIZATION}/${repository}`
   };
 }
@@ -853,6 +861,10 @@ function ensurePanel() {
   overlay.addEventListener("click", requestClosePanel);
   panel.querySelector(".panel-close").addEventListener("click", requestClosePanel);
   panelElements.repoSelect.addEventListener("change", onDraftRepoChange);
+  panelElements.title.addEventListener("input", () => {
+    panelElements.title.error = false;
+    clearResolvedValidationError();
+  });
   panelElements.save.addEventListener("click", saveTitleAndDescription);
   setupPanelResizer(panel, panelElements.resizer);
   document.addEventListener("keydown", (event) => {
@@ -947,6 +959,10 @@ function openPanel(issue) {
   const elements = ensurePanel();
   panelIssueId = issue.id;
   panelMeta = { labels: null, assignees: null };
+  panelErrors = new Set();
+  resetPanelExtras();
+  closePicker(false);
+  elements.title.error = false;
   elements.title.value = issue.title;
   descriptionEditor.showWrite();
   descriptionEditor.value = issue.body || "";
@@ -980,6 +996,8 @@ function onDraftRepoChange() {
   draftIssue.labels = [];
   draftIssue.assignees = [];
   panelMeta = { labels: null, assignees: null };
+  panelErrors = new Set();
+  closePicker(false);
   refreshPanel();
   loadPanelMeta(draftIssue);
 }
@@ -1015,7 +1033,7 @@ function hasUnsavedChanges() {
   if (!issue || !panelElements) return false;
   const title = panelElements.title.value.trim();
   const body = descriptionEditor.value;
-  if (issue.draft) return Boolean(title || body.trim() || issue.labels.length || issue.assignees.length);
+  if (issue.draft) return Boolean(title || body.trim() || issue.labels.length || issue.assignees.length || relationCount(issue.relationships));
   return title !== issue.title || body !== (issue.body || "");
 }
 
@@ -1053,6 +1071,7 @@ async function requestClosePanel() {
 
 function closePanel() {
   if (!panelElements) return;
+  closePicker(false);
   panelIssueId = null;
   draftIssue = null;
   panelElements.overlay.hidden = true;
@@ -1084,18 +1103,48 @@ function showPanelError(message) {
   if (!panelElements) return;
   panelElements.error.textContent = message;
   panelElements.error.hidden = false;
+  delete panelElements.error.dataset.validation;
+}
+
+function clearResolvedValidationError() {
+  const { error, title } = panelElements;
+  if (error.dataset.validation && !title.error && panelErrors.size === 0) {
+    error.hidden = true;
+    delete error.dataset.validation;
+  }
+}
+
+function isGroupMissing(issue, prefix) {
+  return groupOptions(issue, prefix).length > 0 && !issue.labels.some((label) => hasPrefix(label.name, prefix));
+}
+
+function validateDraft(draft, title) {
+  if (panelMeta.labels === null) {
+    showPanelError("The repository labels are not loaded yet. Wait a moment or pick another repository.");
+    return false;
+  }
+  panelErrors = new Set(REQUIRED_GROUPS.filter(({ prefix }) => isGroupMissing(draft, prefix)).map(({ prefix }) => prefix));
+  panelElements.title.error = !title;
+  panelElements.title.errorText = title ? "" : "Enter a title.";
+  renderPanelControls();
+  if (title && panelErrors.size === 0) return true;
+  showPanelError("Complete the highlighted fields before creating the issue.");
+  panelElements.error.dataset.validation = "true";
+  if (!title) panelElements.title.focus();
+  else panelElements.controls.querySelector(".has-error .connected-button")?.focus();
+  return false;
 }
 
 async function saveTitleAndDescription() {
   const issue = currentIssue();
   if (!issue) return;
   const title = panelElements.title.value.trim();
-  if (!title) {
-    showPanelError("The title cannot be empty.");
+  if (issue.draft) {
+    if (validateDraft(issue, title)) await createIssue(issue, title);
     return;
   }
-  if (issue.draft) {
-    await createIssue(issue, title);
+  if (!title) {
+    showPanelError("The title cannot be empty.");
     return;
   }
   panelElements.save.textContent = "Saving…";
@@ -1137,6 +1186,8 @@ async function createIssue(draft, title) {
     renderBoard();
     summary.textContent = summaryText();
     closePanel();
+    const failures = await applyDraftRelationships(created, draft.relationships);
+    if (failures.length) showNotice(`Issue #${created.number} was created, but some relationships could not be set: ${failures.join(", ")}.`, true);
   } catch (error) {
     showPanelError(`Could not create the issue: ${apiErrorMessage(error)}`);
   } finally {
@@ -1206,24 +1257,41 @@ function groupOptions(issue, prefix) {
   return [...names];
 }
 
+function panelFlow(issue) {
+  const names = issue.labels.map((label) => label.name);
+  return FLOWS.find((item) => names.includes(flowLabelName(item))) || (issueVersion(issue) === "Unassigned" ? "" : DEFAULT_FLOW);
+}
+
+function orderedGroupOptions(issue, prefix) {
+  const options = groupOptions(issue, prefix);
+  if (prefix !== "Priority") return options;
+  const rank = (name) => {
+    const index = PRIORITY_ORDER.indexOf(labelValue(name));
+    return index === -1 ? PRIORITY_ORDER.length : index;
+  };
+  return options.sort((a, b) => rank(a) - rank(b));
+}
+
 function renderPanelControls() {
   if (!panelElements || panelIssueId === null) return;
   const issue = currentIssue();
   if (!issue) return;
+  ensurePanelExtras(issue);
   const repository = repoOf(issue)[1];
   const names = issue.labels.map((label) => label.name);
   const version = issueVersion(issue);
-  const flow = FLOWS.find((item) => names.includes(flowLabelName(item))) || (version === "Unassigned" ? "" : DEFAULT_FLOW);
-  const flowOptions = version === "Unassigned" ? ["", ...FLOWS] : FLOWS;
+  const flow = panelFlow(issue);
   const locked = !accessToken || panelBusy;
   const disabled = locked ? "disabled" : "";
-  const option = (value, text, selected) => `<md-select-option value="${escapeHtml(value)}" ${selected ? "selected" : ""}><div slot="headline">${escapeHtml(text)}</div></md-select-option>`;
-  const select = (id, label, options, warning = "") => `
-    <div class="control select-control">
-      <md-outlined-select id="${id}" label="${label}" ${disabled}>${options}</md-outlined-select>
-      ${warning}
-    </div>`;
 
+  const chipSet = (id, label, options, current, warning = "") => `
+    <div class="control">
+      <span class="control-label">${label}${warning}</span>
+      ${options.length === 0 ? '<p class="empty-note">No labels in this repo.</p>' : `
+      <md-chip-set aria-label="${label}">
+        ${options.map(({ value, text }) => `<md-filter-chip label="${escapeHtml(text)}" data-chip="${id}" data-value="${escapeHtml(value)}" ${value === current ? "selected" : ""} ${disabled}></md-filter-chip>`).join("")}
+      </md-chip-set>`}
+    </div>`;
   const metaSwitches = META_LABELS.map((meta) => {
     const labelName = `Meta : ${meta}`;
     const checked = names.some((name) => hasPrefix(name, "Meta") && labelValue(name).toLowerCase() === meta.toLowerCase());
@@ -1235,56 +1303,52 @@ function renderPanelControls() {
       </label>`;
   }).join("");
 
-  const chipGroup = (prefix) => {
-    const options = groupOptions(issue, prefix);
+  const buttonGroup = (prefix, mode, required = false) => {
+    const options = orderedGroupOptions(issue, prefix);
+    const mandatory = required && issue.draft && options.length > 0;
+    const invalid = mandatory && panelErrors.has(prefix) && isGroupMissing(issue, prefix);
+    const message = REQUIRED_GROUPS.find((group) => group.prefix === prefix)?.message;
+    const labelId = `group-${prefix.toLowerCase()}`;
     return `
-      <div class="control">
-        <span class="control-label">${prefix}</span>
+      <div class="control ${invalid ? "has-error" : ""}">
+        <span class="control-label" id="${labelId}">${prefix}${mandatory ? '<span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">(required)</span>' : ""}</span>
         ${options.length === 0 ? '<p class="empty-note">No labels in this repo.</p>' : `
-        <md-chip-set aria-label="${prefix}">
-          ${options.map((name) => `<md-filter-chip label="${escapeHtml(labelValue(name))}" data-group-label="${escapeHtml(name)}" ${names.includes(name) ? "selected" : ""} ${disabled}></md-filter-chip>`).join("")}
-        </md-chip-set>`}
+        <div class="connected-group" role="group" aria-labelledby="${labelId}" ${invalid ? `aria-describedby="${labelId}-error"` : ""} data-mode="${mode}">
+          ${options.map((name) => `<button type="button" class="connected-button" data-group-label="${escapeHtml(name)}" data-prefix="${prefix}" aria-pressed="${names.includes(name)}" title="${escapeHtml(labelValue(name))}" ${disabled}><md-ripple></md-ripple><md-focus-ring></md-focus-ring><span>${escapeHtml(labelValue(name))}</span></button>`).join("")}
+        </div>`}
+        ${invalid ? `<p class="field-error" id="${labelId}-error" role="alert">${message}</p>` : ""}
       </div>`;
   };
 
-  const blockedOptions = groupOptions(issue, "Blocked");
+  const versionWarning = missingLabelWarning(missingFrom(VERSIONS.map((item) => VERSION_LABELS.get(item))), repository);
+  const flowWarning = missingLabelWarning(missingFrom(FLOWS.map(flowLabelName)), repository);
   const blockedCurrent = names.find((name) => hasPrefix(name, "Blocked")) || "";
-
-  const assignable = panelMeta.assignees || [];
-  const assigned = issue.assignees || [];
-  const assigneeUsers = [...assignable];
-  for (const user of assigned) if (!assigneeUsers.some((item) => item.login === user.login)) assigneeUsers.push(user);
-
-  let assigneeRows;
-  if (panelMeta.assignees === null) assigneeRows = '<md-circular-progress indeterminate aria-label="Loading assignees"></md-circular-progress>';
-  else if (assigneeUsers.length === 0) assigneeRows = '<p class="empty-note">No assignable users.</p>';
-  else {
-    assigneeRows = `<div class="assignee-list">${assigneeUsers.map((user) => `
-      <label class="check-row"><md-checkbox data-assignee="${escapeHtml(user.login)}" ${assigned.some((item) => item.login === user.login) ? "checked" : ""} ${disabled}></md-checkbox>
-        <img class="avatar" src="${escapeHtml(user.avatar_url)}" alt="" width="24" height="24"> ${escapeHtml(user.login)}</label>`).join("")}</div>`;
-  }
+  const blockedOptions = groupOptions(issue, "Blocked").map((name) => ({ value: name, text: labelValue(name) }));
 
   panelElements.controls.disabled = locked;
   panelElements.controls.innerHTML = `
     <section class="workflow-section">
       <h3>Workflow</h3>
-      ${select("panel-version", "Version", VERSIONS.map((item) => option(item, item, item === version)).join(""), missingLabelWarning(missingFrom(VERSIONS.map((item) => VERSION_LABELS.get(item))), repository))}
-      ${select("panel-flow", "Flow", flowOptions.map((item) => option(item, item || "— None —", item === flow)).join(""), missingLabelWarning(missingFrom(FLOWS.map(flowLabelName)), repository))}
+      ${chipSet("version", "Version", VERSIONS.map((item) => ({ value: item, text: item })), version, versionWarning)}
+      ${chipSet("flow", "Flow", FLOWS.map((item) => ({ value: item, text: item })), flow, flowWarning)}
+      ${chipSet("blocked", "Blocked", blockedOptions, blockedCurrent)}
     </section>
     <section class="other-section">
       <h3>Labels</h3>
       <div class="switches">${metaSwitches}</div>
-      ${chipGroup("Priority")}
-      ${chipGroup("Type")}
-      ${chipGroup("Stack")}
-      ${select("panel-blocked", "Blocked", option("", "None", blockedCurrent === "") + blockedOptions.map((name) => option(name, labelValue(name), name === blockedCurrent)).join(""))}
+      ${buttonGroup("Type", "exclusive", true)}
+      ${buttonGroup("Stack", "multi", true)}
+      ${buttonGroup("Priority", "clearable")}
     </section>
-    <section class="other-section">
-      <h3>Assignees</h3>
-      ${assigneeRows}
-    </section>
+    ${assigneesSectionHtml(issue, disabled)}
+    ${developmentSectionHtml(issue)}
+    ${relationshipsSectionHtml(issue, disabled)}
   `;
   bindPanelControls(issue);
+  if (picker) {
+    positionPicker();
+    refreshPicker(picker.config.live);
+  }
 }
 
 function bindPanelControls(issue) {
@@ -1292,18 +1356,31 @@ function bindPanelControls(issue) {
   const names = issue.labels.map((label) => label.name);
   const withoutPrefix = (prefix) => names.filter((name) => !hasPrefix(name, prefix));
 
-  controls.querySelector("#panel-version").addEventListener("change", (event) => {
-    const value = event.target.value;
-    const labels = withoutPrefix("Version");
-    labels.push(VERSION_LABELS.get(value));
-    if (DETAIL_VERSIONS.includes(value) && !labels.some(isFlowLabel)) labels.push(flowLabelName(DEFAULT_FLOW));
-    patchIssue(issue, { labels });
-  });
+  const chipLabels = (group, value) => {
+    if (group === "version") {
+      if (value === issueVersion(issue)) return null;
+      const labels = withoutPrefix("Version");
+      labels.push(VERSION_LABELS.get(value));
+      if (DETAIL_VERSIONS.includes(value) && !labels.some(isFlowLabel)) labels.push(flowLabelName(DEFAULT_FLOW));
+      return labels;
+    }
+    if (group === "flow") {
+      const labels = withoutPrefix("Flow");
+      if (value === panelFlow(issue)) return issueVersion(issue) === "Unassigned" ? labels : null;
+      labels.push(flowLabelName(value));
+      return labels;
+    }
+    const labels = withoutPrefix("Blocked");
+    if (!names.includes(value)) labels.push(value);
+    return labels;
+  };
 
-  controls.querySelector("#panel-flow").addEventListener("change", (event) => {
-    const labels = withoutPrefix("Flow");
-    if (event.target.value) labels.push(flowLabelName(event.target.value));
-    patchIssue(issue, { labels });
+  controls.querySelectorAll("[data-chip]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const labels = chipLabels(chip.dataset.chip, chip.dataset.value);
+      if (labels) patchIssue(issue, { labels });
+      else renderPanelControls();
+    });
   });
 
   controls.querySelectorAll("[data-meta]").forEach((input) => {
@@ -1315,28 +1392,23 @@ function bindPanelControls(issue) {
     });
   });
 
-  controls.querySelectorAll("[data-group-label]").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      const name = chip.dataset.groupLabel;
-      const labels = names.filter((item) => item !== name);
-      if (chip.selected) labels.push(name);
-      patchIssue(issue, { labels });
+  controls.querySelectorAll(".connected-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const { groupLabel: name, prefix } = button.dataset;
+      const mode = button.parentElement.dataset.mode;
+      const selected = names.includes(name);
+      let labels = null;
+      if (mode === "multi") labels = selected ? names.filter((item) => item !== name) : [...names, name];
+      else if (!selected) labels = [...withoutPrefix(prefix), name];
+      else if (mode === "clearable") labels = names.filter((item) => item !== name);
+      panelErrors.delete(prefix);
+      clearResolvedValidationError();
+      if (labels) patchIssue(issue, { labels });
+      else renderPanelControls();
     });
   });
 
-  controls.querySelector("#panel-blocked").addEventListener("change", (event) => {
-    const labels = withoutPrefix("Blocked");
-    if (event.target.value) labels.push(event.target.value);
-    patchIssue(issue, { labels });
-  });
-
-  controls.querySelectorAll("[data-assignee]").forEach((input) => {
-    input.addEventListener("change", () => {
-      const current = (issue.assignees || []).map((user) => user.login).filter((login) => login !== input.dataset.assignee);
-      if (input.checked) current.push(input.dataset.assignee);
-      patchIssue(issue, { assignees: current });
-    });
-  });
+  bindSettingsSections(controls, issue);
 }
 
 async function loadOrganizationRepos() {
