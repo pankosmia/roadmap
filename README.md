@@ -63,7 +63,9 @@ GitHub colors, without the text before the ":" (for example "Spec'd" for
 "Flow : Spec'd"). Moving an issue replaces all of its existing `Version : ...`
 labels with the selected version label; other labels are preserved.
 
-Below the search bar, every page has a **View** button and two filter chips,
+A one-line footer at the bottom of every page shows the issue count and the
+click/drag hint. Below the search bar (which spans the width of the columns),
+every page has a **View** button (tonal) and two filter chips,
 **Assignee** and **Repository** (`filters.js`). Both chips are multi-select menus
 listing the assignees (plus **Unassigned**) and repositories of the loaded open
 issues, with their issue counts. A card is shown when it matches the selection of
