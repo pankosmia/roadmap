@@ -957,6 +957,7 @@ async function renderMarkdownPreview(text) {
 
 function openPanel(issue) {
   const elements = ensurePanel();
+  flushIssueSaves();
   panelIssueId = issue.id;
   panelMeta = { labels: null, assignees: null };
   panelErrors = new Set();
@@ -1008,7 +1009,10 @@ function loadPanelMeta(issue) {
   const isCurrent = () => panelIssueId === issueId && repoOf(currentIssue()).join("/") === `${owner}/${repository}`;
   repoLabels(owner, repository)
     .then((labels) => {
-      if (isCurrent()) panelMeta.labels = labels.map((label) => label.name);
+      if (isCurrent()) {
+        panelMeta.labels = labels.map((label) => label.name);
+        panelMeta.colors = new Map(labels.map((label) => [label.name, label.color]));
+      }
     })
     .catch((error) => {
       if (isCurrent()) showPanelError(`Could not load labels: ${apiErrorMessage(error)}`);
@@ -1071,6 +1075,7 @@ async function requestClosePanel() {
 
 function closePanel() {
   if (!panelElements) return;
+  flushIssueSaves();
   closePicker(false);
   panelIssueId = null;
   draftIssue = null;
@@ -1148,7 +1153,7 @@ async function saveTitleAndDescription() {
     return;
   }
   panelElements.save.textContent = "Saving…";
-  const updated = await patchIssue(issue, { title, body: descriptionEditor.value });
+  const updated = await patchIssueNow(issue, { title, body: descriptionEditor.value });
   panelElements.save.textContent = "Save";
   if (updated) {
     panelElements.title.value = updated.title;
@@ -1199,7 +1204,7 @@ async function createIssue(draft, title) {
 async function patchIssue(issue, body) {
   if (!accessToken) {
     openAuthDialog();
-    return null;
+    return;
   }
   if (issue.draft) {
     if (body.labels) issue.labels = body.labels.map((name) => ({ name }));
@@ -1208,25 +1213,133 @@ async function patchIssue(issue, body) {
       issue.assignees = body.assignees.map((login) => known.find((user) => user.login === login));
     }
     renderPanelControls();
-    return issue;
+    return;
   }
-  const [owner, repository] = repoOf(issue);
-  panelBusy = true;
+  queueIssueSave(issue, body);
+}
+
+// Labels and assignees of an existing issue change instantly on screen. The requests are sent in the
+// background once no other change has been made for SAVE_DELAY, so quick clicks end up in a single request.
+const SAVE_DELAY = 600;
+const issueSaves = new Map();
+
+function labelObject(issue, name) {
+  return issue.labels.find((label) => label.name === name) || { name, color: panelMeta.colors?.get(name) || labelColor(name) };
+}
+
+function applyIssueChange(index, body) {
+  const issue = issues[index];
+  const next = { ...issue };
+  if (body.labels) next.labels = body.labels.map((name) => labelObject(issue, name));
+  if (body.assignees) {
+    const known = [...(panelMeta.assignees || []), ...(issue.assignees || [])];
+    next.assignees = body.assignees.map((login) => known.find((user) => user.login === login)).filter(Boolean);
+  }
+  issues[index] = next;
+}
+
+function queueIssueSave(issue, body) {
+  const index = issues.findIndex((item) => item.id === issue.id);
+  if (index === -1) return;
+  let save = issueSaves.get(issue.id);
+  if (!save) {
+    save = { issue, body: {}, timer: null, running: false, confirmed: { labels: issues[index].labels, assignees: issues[index].assignees } };
+    issueSaves.set(issue.id, save);
+  }
+  applyIssueChange(index, body);
+  Object.assign(save.body, body);
+  clearTimeout(save.timer);
+  save.timer = setTimeout(() => {
+    save.timer = null;
+    runIssueSave(issue);
+  }, SAVE_DELAY);
   panelElements.error.hidden = true;
-  renderPanelControls();
+  renderBoard();
+  summary.textContent = summaryText();
+  refreshPanel();
+}
+
+async function runIssueSave(issue) {
+  const save = issueSaves.get(issue.id);
+  if (!save || save.running) return;
+  clearTimeout(save.timer);
+  save.timer = null;
+  const body = save.body;
+  save.body = {};
+  if (Object.keys(body).length === 0) {
+    issueSaves.delete(issue.id);
+    return;
+  }
+  save.running = true;
+  const [owner, repository] = repoOf(issue);
   try {
     const updated = await githubRequest(
       `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/${issue.number}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      },
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
       accessToken
     );
+    save.confirmed = { labels: updated.labels, assignees: updated.assignees };
+    mergeUpdatedIssue(issue, updated);
+  } catch (error) {
+    // Go back to what GitHub has, and drop the changes made since.
+    clearTimeout(save.timer);
+    save.timer = null;
+    save.body = {};
     const index = issues.findIndex((item) => item.id === issue.id);
-    const merged = { ...(index === -1 ? issue : issues[index]), ...updated };
-    if (index !== -1) issues[index] = merged;
+    if (index !== -1) issues[index] = { ...issues[index], ...save.confirmed };
+    const message = `Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`;
+    if (panelIssueId === issue.id) showPanelError(message);
+    else showNotice(message, true);
+  } finally {
+    save.running = false;
+    if (save.timer === null && Object.keys(save.body).length > 0) runIssueSave(issue);
+    else if (save.timer === null) issueSaves.delete(issue.id);
+    saveIssuesCache();
+    renderBoard();
+    summary.textContent = summaryText();
+    refreshPanel();
+  }
+}
+
+function flushIssueSaves() {
+  for (const save of issueSaves.values()) {
+    if (save.timer === null) continue;
+    clearTimeout(save.timer);
+    save.timer = null;
+    runIssueSave(save.issue);
+  }
+}
+
+window.addEventListener("beforeunload", (event) => {
+  if (issueSaves.size === 0) return;
+  flushIssueSaves();
+  event.preventDefault();
+});
+
+function mergeUpdatedIssue(issue, updated) {
+  const index = issues.findIndex((item) => item.id === issue.id);
+  const base = index === -1 ? issue : issues[index];
+  const merged = { ...base, ...updated };
+  const save = issueSaves.get(issue.id);
+  // Keep the on-screen labels and assignees when newer changes are waiting to be saved.
+  if (save && (save.timer !== null || Object.keys(save.body).length > 0)) {
+    merged.labels = base.labels;
+    merged.assignees = base.assignees;
+  }
+  if (index !== -1) issues[index] = merged;
+  return merged;
+}
+
+async function patchIssueNow(issue, body) {
+  const [owner, repository] = repoOf(issue);
+  panelElements.error.hidden = true;
+  try {
+    const updated = await githubRequest(
+      `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/${issue.number}`,
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      accessToken
+    );
+    const merged = mergeUpdatedIssue(issue, updated);
     saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
@@ -1235,7 +1348,6 @@ async function patchIssue(issue, body) {
     showPanelError(`Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`);
     return null;
   } finally {
-    panelBusy = false;
     refreshPanel();
   }
 }
@@ -1284,14 +1396,24 @@ function renderPanelControls() {
   const locked = !accessToken || panelBusy;
   const disabled = locked ? "disabled" : "";
 
-  const chipSet = (id, label, options, current, warning = "") => `
+  // One chip per setting; it shows the current value and opens a menu with the choices.
+  const menuChip = (id, label, options, current, { warning = "", emptyText = "Select…", noneText = "" } = {}) => {
+    const items = noneText ? [{ value: "", text: noneText }, ...options] : options;
+    const shown = options.find(({ value }) => value === current)?.text || emptyText;
+    return `
     <div class="control">
       <span class="control-label">${label}${warning}</span>
       ${options.length === 0 ? '<p class="empty-note">No labels in this repo.</p>' : `
-      <md-chip-set aria-label="${label}">
-        ${options.map(({ value, text }) => `<md-filter-chip label="${escapeHtml(text)}" data-chip="${id}" data-value="${escapeHtml(value)}" ${value === current ? "selected" : ""} ${disabled}></md-filter-chip>`).join("")}
-      </md-chip-set>`}
+      <div class="menu-chip">
+        <md-assist-chip id="chip-${id}" class="menu-chip-button" aria-label="${label}: ${escapeHtml(shown)}" aria-haspopup="menu" data-menu="${id}" ${disabled}>
+          <span class="chip-content"><span>${escapeHtml(shown)}</span><md-icon>arrow_drop_down</md-icon></span>
+        </md-assist-chip>
+        <md-menu id="menu-${id}" anchor="chip-${id}" positioning="popover" aria-label="${label}">
+          ${items.map(({ value, text }) => `<md-menu-item data-chip="${id}" data-value="${escapeHtml(value)}" ${value === current ? "selected" : ""}><div slot="headline">${escapeHtml(text)}</div></md-menu-item>`).join("")}
+        </md-menu>
+      </div>`}
     </div>`;
+  };
   const metaSwitches = META_LABELS.map((meta) => {
     const labelName = `Meta : ${meta}`;
     const checked = names.some((name) => hasPrefix(name, "Meta") && labelValue(name).toLowerCase() === meta.toLowerCase());
@@ -1305,7 +1427,7 @@ function renderPanelControls() {
 
   const buttonGroup = (prefix, mode, required = false) => {
     const options = orderedGroupOptions(issue, prefix);
-    const mandatory = required && issue.draft && options.length > 0;
+    const mandatory = required && options.length > 0;
     const invalid = mandatory && panelErrors.has(prefix) && isGroupMissing(issue, prefix);
     const message = REQUIRED_GROUPS.find((group) => group.prefix === prefix)?.message;
     const labelId = `group-${prefix.toLowerCase()}`;
@@ -1313,7 +1435,7 @@ function renderPanelControls() {
       <div class="control ${invalid ? "has-error" : ""}">
         <span class="control-label" id="${labelId}">${prefix}${mandatory ? '<span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">(required)</span>' : ""}</span>
         ${options.length === 0 ? '<p class="empty-note">No labels in this repo.</p>' : `
-        <div class="connected-group" role="group" aria-labelledby="${labelId}" ${invalid ? `aria-describedby="${labelId}-error"` : ""} data-mode="${mode}">
+        <div class="connected-group" role="group" aria-labelledby="${labelId}" ${invalid ? `aria-describedby="${labelId}-error"` : ""} data-mode="${mode}" ${required ? 'data-required="true"' : ""}>
           ${options.map((name) => `<button type="button" class="connected-button" data-group-label="${escapeHtml(name)}" data-prefix="${prefix}" aria-pressed="${names.includes(name)}" title="${escapeHtml(labelValue(name))}" ${disabled}><md-ripple></md-ripple><md-focus-ring></md-focus-ring><span>${escapeHtml(labelValue(name))}</span></button>`).join("")}
         </div>`}
         ${invalid ? `<p class="field-error" id="${labelId}-error" role="alert">${message}</p>` : ""}
@@ -1329,9 +1451,9 @@ function renderPanelControls() {
   panelElements.controls.innerHTML = `
     <section class="workflow-section">
       <h3>Workflow</h3>
-      ${chipSet("version", "Version", VERSIONS.map((item) => ({ value: item, text: item })), version, versionWarning)}
-      ${chipSet("flow", "Flow", FLOWS.map((item) => ({ value: item, text: item })), flow, flowWarning)}
-      ${chipSet("blocked", "Blocked", blockedOptions, blockedCurrent)}
+      ${menuChip("version", "Version", VERSIONS.map((item) => ({ value: item, text: item })), version, { warning: versionWarning })}
+      ${menuChip("flow", "Flow", FLOWS.map((item) => ({ value: item, text: item })), flow, { warning: flowWarning })}
+      ${menuChip("blocked", "Blocked", blockedOptions, blockedCurrent, { noneText: "None" })}
     </section>
     <section class="other-section">
       <h3>Labels</h3>
@@ -1365,21 +1487,25 @@ function bindPanelControls(issue) {
       return labels;
     }
     if (group === "flow") {
-      const labels = withoutPrefix("Flow");
-      if (value === panelFlow(issue)) return issueVersion(issue) === "Unassigned" ? labels : null;
-      labels.push(flowLabelName(value));
-      return labels;
+      if (value === panelFlow(issue)) return null;
+      return [...withoutPrefix("Flow"), flowLabelName(value)];
     }
-    const labels = withoutPrefix("Blocked");
-    if (!names.includes(value)) labels.push(value);
-    return labels;
+    if (value === "") return withoutPrefix("Blocked");
+    if (names.includes(value)) return null;
+    return [...withoutPrefix("Blocked"), value];
   };
 
-  controls.querySelectorAll("[data-chip]").forEach((chip) => {
+  controls.querySelectorAll("[data-menu]").forEach((chip) => {
+    const menu = controls.querySelector(`#menu-${chip.dataset.menu}`);
     chip.addEventListener("click", () => {
-      const labels = chipLabels(chip.dataset.chip, chip.dataset.value);
+      menu.open = !menu.open;
+    });
+  });
+
+  controls.querySelectorAll("md-menu-item[data-chip]").forEach((item) => {
+    item.addEventListener("click", () => {
+      const labels = chipLabels(item.dataset.chip, item.dataset.value);
       if (labels) patchIssue(issue, { labels });
-      else renderPanelControls();
     });
   });
 
@@ -1395,8 +1521,10 @@ function bindPanelControls(issue) {
   controls.querySelectorAll(".connected-button").forEach((button) => {
     button.addEventListener("click", () => {
       const { groupLabel: name, prefix } = button.dataset;
-      const mode = button.parentElement.dataset.mode;
+      const { mode, required } = button.parentElement.dataset;
       const selected = names.includes(name);
+      const onlyOne = names.filter((item) => hasPrefix(item, prefix)).length === 1;
+      if (selected && required && onlyOne) return;
       let labels = null;
       if (mode === "multi") labels = selected ? names.filter((item) => item !== name) : [...names, name];
       else if (!selected) labels = [...withoutPrefix(prefix), name];
