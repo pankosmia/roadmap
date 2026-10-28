@@ -1133,20 +1133,54 @@ md-outlined-select {
   cursor: pointer;
 }
 
-.section-heading {
+.panel-controls .section-heading {
+  margin: 0 0 4px;
+}
+
+.section-trigger {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: calc(100% + 16px);
   min-height: 40px;
-  margin-bottom: 4px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--md-sys-shape-sm, 8px);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.section-heading h3 {
-  margin: 0;
+.section-trigger md-icon {
+  color: var(--md-sys-color-on-surface-variant);
 }
 
-.section-action {
-  margin-right: -8px;
+.section-trigger:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.menu-chip {
+  position: relative;
+}
+
+.menu-chip-button {
+  --md-assist-chip-label-text-color: var(--md-sys-color-on-surface);
+}
+
+.chip-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.chip-content md-icon {
+  --md-icon-size: 18px;
+  margin-right: -6px;
 }
 
 .person-list,

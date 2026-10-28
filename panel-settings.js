@@ -192,19 +192,38 @@ async function changeRelation(issue, kind, item, adding) {
     renderPanelControls();
     return;
   }
-  panelBusy = true;
   panelElements.error.hidden = true;
+  panelExtras.relations = withRelation(panelExtras.relations, kind, item, adding);
   renderPanelControls();
-  try {
-    await mutateRelation(issue, kind, item, adding);
-    panelExtras.relations = withRelation(panelExtras.relations, kind, item, adding);
-    clearIssuesCache();
-  } catch (error) {
-    showPanelError(`Could not update the relationships of ${repoOf(issue)[1]}#${issue.number}: ${apiErrorMessage(error)}`);
-  } finally {
-    panelBusy = false;
-    refreshPanel();
-  }
+  queueRelationJob(issue, kind, item, adding, panelExtras.key);
+}
+
+// Relationship changes show instantly and are sent in order in the background.
+// After a failure, the relationships are reloaded once the queue is empty.
+let relationQueue = Promise.resolve();
+let relationJobs = 0;
+let relationReload = null;
+
+function queueRelationJob(issue, kind, item, adding, key) {
+  relationJobs += 1;
+  relationQueue = relationQueue.then(async () => {
+    try {
+      await mutateRelation(issue, kind, item, adding);
+      clearIssuesCache();
+    } catch (error) {
+      const message = `Could not update the relationships of ${repoOf(issue)[1]}#${issue.number}: ${apiErrorMessage(error)}`;
+      relationReload = { issue, key };
+      if (panelExtras.key === key) showPanelError(message);
+      else showNotice(message, true);
+    } finally {
+      relationJobs -= 1;
+      if (relationJobs === 0 && relationReload) {
+        const reload = relationReload;
+        relationReload = null;
+        if (panelExtras.key === reload.key) loadRelations(reload.issue, reload.key);
+      }
+    }
+  });
 }
 
 async function applyDraftRelationships(created, relations) {
@@ -220,16 +239,16 @@ async function applyDraftRelationships(created, relations) {
   return failures;
 }
 
-function sectionHtml(title, action, body) {
+// A section whose heading is a button (title and gear) opens a picker, as on GitHub.
+function sectionHtml(title, trigger, body) {
+  const heading = trigger
+    ? `<h3 class="section-heading"><button type="button" class="section-trigger" data-picker="${trigger.key}" aria-haspopup="dialog" ${trigger.disabled}><md-ripple></md-ripple><md-focus-ring></md-focus-ring><span>${title}</span><md-icon>settings</md-icon></button></h3>`
+    : `<h3 class="section-heading">${title}</h3>`;
   return `
     <section class="other-section">
-      <div class="section-heading"><h3>${title}</h3>${action}</div>
+      ${heading}
       ${body}
     </section>`;
-}
-
-function gearButton(key, label, disabled) {
-  return `<md-icon-button class="section-action" data-picker="${key}" aria-label="${label}" aria-haspopup="dialog" ${disabled}><md-icon>settings</md-icon></md-icon-button>`;
 }
 
 function assigneesSectionHtml(issue, disabled) {
@@ -243,7 +262,7 @@ function assigneesSectionHtml(issue, disabled) {
       <li><a class="person" href="https://github.com/${encodeURIComponent(user.login)}" target="_blank" rel="noopener">
         <img class="avatar" src="${escapeHtml(user.avatar_url)}" alt="" width="24" height="24"><span>${escapeHtml(user.login)}</span></a></li>`).join("")}</ul>`;
   }
-  return sectionHtml("Assignees", gearButton("assignees", "Edit assignees", disabled), body);
+  return sectionHtml("Assignees", { key: "assignees", disabled }, body);
 }
 
 const PULL_STATES = {
@@ -283,7 +302,7 @@ function developmentSectionHtml(issue) {
         </li>`);
     body = `<ul class="relation-list">${[...pullRows, ...branchRows].join("")}</ul>`;
   }
-  return sectionHtml("Development", "", body);
+  return sectionHtml("Development", null, body);
 }
 
 function relationRowHtml(kind, item, disabled) {
@@ -311,7 +330,7 @@ function relationshipsSectionHtml(issue, disabled) {
     }).join("");
   }
   const locked = relationsStatus === "loading" || relationsStatus === "error" ? "disabled" : disabled;
-  return sectionHtml("Relationships", gearButton("relationships", "Edit relationships", locked), body);
+  return sectionHtml("Relationships", { key: "relationships", disabled: locked }, body);
 }
 
 function bindSettingsSections(controls, issue) {
