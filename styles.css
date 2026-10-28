@@ -1517,7 +1517,21 @@ md-outlined-text-field {
 .status-pill-duplicate { background: var(--status-gray-fill); }
 
 .panel-save-row { gap: 8px; align-items: center; }
-.close-split { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+.close-split {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+.close-main {
+  --md-outlined-button-container-shape: 20px 0 0 20px;
+}
+
+.close-menu-toggle {
+  --md-outlined-icon-button-container-shape: 0 20px 20px 0;
+  margin-left: -1px;
+}
 .close-split[hidden],
 .reopen-button[hidden] { display: none; }
 
@@ -1527,20 +1541,29 @@ md-outlined-text-field {
   margin-right: auto;
 }
 
+.duplicate-dialog,
+.done-dialog {
+  max-width: min(720px, calc(100vw - 48px));
+}
+
 .duplicate-content,
 .done-content {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
-  min-width: min(520px, 80vw);
+  width: min(640px, calc(100vw - 96px));
 }
 
 .duplicate-results,
 .done-list {
   display: grid;
   gap: 4px;
-  max-height: 320px;
+  overflow-x: hidden;
   overflow-y: auto;
 }
+
+.duplicate-results { max-height: 220px; }
+.done-list { max-height: 320px; }
 
 .duplicate-option {
   display: flex;
@@ -1562,5 +1585,5 @@ md-outlined-text-field {
 }
 
 .duplicate-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.duplicate-ref { flex: none; color: var(--md-sys-color-on-surface-variant); font: var(--md-type-label-small); }
+.duplicate-ref { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--md-sys-color-on-surface-variant); font: var(--md-type-label-small); }
 .duplicate-empty { margin: 0; padding: 12px; color: var(--md-sys-color-on-surface-variant); }

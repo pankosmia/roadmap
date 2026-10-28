@@ -425,7 +425,7 @@ function createIssueCard(issue) {
     ${labels ? `<div class="issue-labels" aria-label="Issue labels">${labels}</div>` : ""}
     ${cardStats(issue)}
     <div class="card-footer">
-      ${pendingClosures.has(issue.id) ? '<md-text-button class="undo-close-button" type="button">Undo close</md-text-button>' : ""}
+      ${pendingClosures.has(issue.id) ? '<md-text-button class="undo-close-button" type="button" data-issue-id="${issue.id}">${undoLabel(issue)}</md-text-button>' : ""}
       <md-text-button class="move-button" data-issue-id="${issue.id}" trailing-icon aria-label="Move issue #${number} to ${detailVersion ? "stage" : "version"}" ${accessToken ? "" : "disabled"}>
         Move to
         <md-icon slot="icon">arrow_drop_down</md-icon>
@@ -651,6 +651,32 @@ function showNotice(message, isError = false) {
 const CLOSE_UNDO_MS = 30000;
 const ARCHIVE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 const pendingClosures = new Map();
+let countdownTimer = 0;
+
+function pendingSeconds(issue) {
+  const pending = pendingClosures.get(issue.id);
+  return pending ? Math.max(0, Math.ceil((pending.deadline - Date.now()) / 1000)) : 0;
+}
+
+function undoLabel(issue) {
+  return `Undo close (${pendingSeconds(issue)}s)`;
+}
+
+function tickCountdown() {
+  if (pendingClosures.size === 0) {
+    clearInterval(countdownTimer);
+    countdownTimer = 0;
+    return;
+  }
+  for (const issue of issues) {
+    if (!pendingClosures.has(issue.id)) continue;
+    const label = undoLabel(issue);
+    document.querySelectorAll(`.undo-close-button[data-issue-id="${issue.id}"]`).forEach((button) => {
+      button.textContent = label;
+    });
+    if (panelElements && panelIssueId === issue.id) panelElements.reopenButton.textContent = label;
+  }
+}
 
 function isClosed(issue) {
   return issue.state === "closed";
@@ -673,20 +699,24 @@ function statusIconHtml(issue) {
   return `<md-icon class="status-icon status-${status.key}" role="img" title="${status.label}" aria-label="${status.label}">${status.icon}</md-icon>`;
 }
 
-function startPendingClosure(issue) {
-  clearTimeout(pendingClosures.get(issue.id));
-  pendingClosures.set(
-    issue.id,
-    setTimeout(() => {
-      pendingClosures.delete(issue.id);
-      renderBoard();
-      summary.textContent = summaryText();
-      refreshPanel();
-    }, CLOSE_UNDO_MS)
-  );
+function clearPendingClosure(issue) {
+  clearTimeout(pendingClosures.get(issue.id)?.timer);
+  pendingClosures.delete(issue.id);
 }
 
-function issueApiUrl(issue) {
+function startPendingClosure(issue) {
+  clearPendingClosure(issue);
+  const timer = setTimeout(() => {
+    pendingClosures.delete(issue.id);
+    renderBoard();
+    summary.textContent = summaryText();
+    refreshPanel();
+  }, CLOSE_UNDO_MS);
+  pendingClosures.set(issue.id, { timer, deadline: Date.now() + CLOSE_UNDO_MS });
+  if (!countdownTimer) countdownTimer = setInterval(tickCountdown, 1000);
+}
+
+function issueEndpoint(issue) {
   const [owner, repository] = repoOf(issue);
   return `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/${issue.number}`;
 }
@@ -704,7 +734,7 @@ async function changeIssueState(issue, body, duplicateOf = null) {
   try {
     if (duplicateOf) {
       await githubRequest(
-        `${issueApiUrl(issue)}/comments`,
+        `${issueEndpoint(issue)}/comments`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -714,16 +744,13 @@ async function changeIssueState(issue, body, duplicateOf = null) {
       );
     }
     const updated = await githubRequest(
-      issueApiUrl(issue),
+      issueEndpoint(issue),
       { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
       accessToken
     );
     const merged = mergeUpdatedIssue(issue, updated);
     if (isClosed(merged)) startPendingClosure(merged);
-    else {
-      clearTimeout(pendingClosures.get(merged.id));
-      pendingClosures.delete(merged.id);
-    }
+    else clearPendingClosure(merged);
     saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
@@ -798,12 +825,13 @@ function renderStatusControls(issue) {
   closeSplit.querySelector(".close-main").disabled = disabled;
   closeSplit.querySelector(".close-menu-toggle").disabled = disabled;
   reopenButton.disabled = disabled;
-  reopenButton.textContent = pendingClosures.has(issue.id) ? "Undo close" : "Reopen issue";
+  reopenButton.textContent = pendingClosures.has(issue.id) ? undoLabel(issue) : "Reopen issue";
 }
 
 function ensureDuplicateDialog() {
   if (duplicateDialog) return duplicateDialog;
   duplicateDialog = document.createElement("md-dialog");
+  duplicateDialog.className = "duplicate-dialog";
   duplicateDialog.innerHTML = `
     <div slot="headline">Close as duplicate</div>
     <div slot="content" class="duplicate-content">
