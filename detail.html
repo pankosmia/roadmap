@@ -24,6 +24,7 @@
     <script src="markdown-editor.js" defer></script>
     <script src="development.js" defer></script>
     <script src="panel-settings.js" defer></script>
+    <script src="filters.js" defer></script>
     <script src="app.js" defer></script>
     <script type="module" src="m3.js"></script>
   </head>
@@ -61,9 +62,12 @@
 
       <section class="board-toolbar" aria-label="Board information">
         <p class="board-info"><span id="board-summary" role="status" aria-live="polite">Loading issues…</span> from <a href="https://github.com/pankosmia" target="_blank" rel="noreferrer">public Pankosmia repositories</a></p>
-        <md-outlined-text-field id="search-input" class="search-input" type="search" label="Search issues" placeholder="Search issue titles and text" aria-label="Search issue titles and text" autocomplete="off">
-          <md-icon slot="leading-icon">search</md-icon>
-        </md-outlined-text-field>
+        <div class="search-stack">
+          <md-outlined-text-field id="search-input" class="search-input" type="search" label="Search issues" placeholder="Search issue titles and text" aria-label="Search issue titles and text" autocomplete="off">
+            <md-icon slot="leading-icon">search</md-icon>
+          </md-outlined-text-field>
+          <div id="filter-bar" class="filter-bar" role="group" aria-label="Filters"></div>
+        </div>
         <p class="board-hint">Click an issue to view and edit it, drag it to move it, or use its move menu.</p>
       </section>
 
