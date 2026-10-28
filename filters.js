@@ -127,7 +127,16 @@ function refreshFilterOptions() {
   filterOptionsKey = key;
   filterUi.options = options;
   filterUi.assigneeMenu.innerHTML = options.assignees.map((option) => filterItemHtml("assignees", option)).join("") || '<p class="filter-empty">No assignees</p>';
-  filterUi.repoMenu.innerHTML = options.repos.map((option) => filterItemHtml("repos", option)).join("") || '<p class="filter-empty">No repositories</p>';
+  renderRepoItems();
+}
+
+// The repository menu keeps its search field as first child; only the items after it are rebuilt.
+function renderRepoItems() {
+  const needle = (filterUi.repoSearch.value || "").trim().toLowerCase();
+  const matches = filterUi.options.repos.filter((option) => option.text.toLowerCase().includes(needle));
+  const empty = needle ? "No matching repositories" : "No repositories";
+  filterUi.repoMenu.querySelectorAll("md-menu-item, .filter-empty").forEach((node) => node.remove());
+  filterUi.repoMenu.insertAdjacentHTML("beforeend", matches.map((option) => filterItemHtml("repos", option)).join("") || `<p class="filter-empty">${empty}</p>`);
   syncFilterBar();
 }
 
@@ -180,6 +189,9 @@ function viewSummary(view) {
 
 function renderViewMenu() {
   const active = activeView();
+  const differs = filtersDiffer();
+  // The actions made available by a pending difference carry the same dot as the View button.
+  const badgedIcon = (icon) => `<span slot="start" class="icon-badge"><md-icon>${icon}</md-icon><span class="view-badge" aria-hidden="true"></span></span>`;
   const check = (visible) => `<md-icon slot="start" class="view-check" ${visible ? "" : "hidden"}>check</md-icon>`;
   const views = filterState.views
     .map(
@@ -201,8 +213,8 @@ function renderViewMenu() {
     </md-menu-item>
     ${views ? `<md-divider role="separator"></md-divider>${views}` : ""}
     <md-divider role="separator"></md-divider>
-    ${active ? `<md-menu-item data-view-action="update" ${filtersDiffer() ? "" : "disabled"}><md-icon slot="start">save</md-icon><div slot="headline">Update “${escapeHtml(active.name)}”</div></md-menu-item>` : ""}
-    <md-menu-item data-view-action="save" ${hasActiveFilters() ? "" : "disabled"}><md-icon slot="start">bookmark_add</md-icon><div slot="headline">Save current filters as new view…</div></md-menu-item>`;
+    ${active ? `<md-menu-item data-view-action="update" ${differs ? "" : "disabled"}>${differs ? badgedIcon("save") : '<md-icon slot="start">save</md-icon>'}<div slot="headline">Update “${escapeHtml(active.name)}”</div></md-menu-item>` : ""}
+    <md-menu-item data-view-action="save" ${hasActiveFilters() ? "" : "disabled"}>${differs && hasActiveFilters() ? badgedIcon("bookmark_add") : '<md-icon slot="start">bookmark_add</md-icon>'}<div slot="headline">Save current filters as new view…</div></md-menu-item>`;
 }
 
 function applyView(view) {
@@ -341,7 +353,7 @@ function initFilters() {
   if (!bar) return;
   bar.innerHTML = `
     <div class="view-button-wrap">
-      <md-filled-tonal-button id="view-button" class="view-button" type="button" aria-haspopup="menu"><md-icon slot="icon">bookmarks</md-icon>View</md-filled-tonal-button>
+      <md-filled-tonal-button id="view-button" class="view-button" type="button" aria-haspopup="menu"><md-icon slot="icon">space_dashboard</md-icon>View</md-filled-tonal-button>
       <span class="view-badge" hidden aria-hidden="true"></span>
       <md-menu id="view-menu" class="view-menu" anchor="view-button" positioning="popover" quick aria-label="View"></md-menu>
     </div>
@@ -351,7 +363,9 @@ function initFilters() {
     </div>
     <div class="filter-chip-wrap">
       <md-filter-chip id="repo-chip" class="filter-chip" aria-haspopup="menu"><span class="chip-content"><span class="chip-label">Repository</span><md-icon>arrow_drop_down</md-icon></span></md-filter-chip>
-      <md-menu id="repo-menu" class="filter-menu" anchor="repo-chip" positioning="popover" quick aria-label="Repository"></md-menu>
+      <md-menu id="repo-menu" class="filter-menu" anchor="repo-chip" positioning="popover" default-focus="none" quick aria-label="Repository">
+        <div class="filter-search-row"><md-outlined-text-field class="filter-search" type="search" label="Search repositories" autocomplete="off"><md-icon slot="leading-icon">search</md-icon></md-outlined-text-field></div>
+      </md-menu>
     </div>`;
   filterUi = {
     bar,
@@ -362,6 +376,7 @@ function initFilters() {
     assigneeMenu: bar.querySelector("#assignee-menu"),
     repoChip: bar.querySelector("#repo-chip"),
     repoMenu: bar.querySelector("#repo-menu"),
+    repoSearch: bar.querySelector(".filter-search"),
     options: { assignees: [], repos: [] },
     nameDialog: null,
     deleteDialog: null
@@ -385,6 +400,29 @@ function initFilters() {
       if (item) toggleFilterValue(item.dataset.filter, item.dataset.value);
     });
   }
+
+  const search = filterUi.repoSearch;
+  search.addEventListener("input", renderRepoItems);
+  // The menu's typeahead would otherwise take the typed letters and move the focus to an item.
+  const typeahead = (type) => () => search.dispatchEvent(new Event(type, { bubbles: true, composed: true }));
+  search.addEventListener("focusin", typeahead("deactivate-typeahead"));
+  search.addEventListener("focusout", typeahead("activate-typeahead"));
+  search.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      filterUi.repoMenu.querySelector("md-menu-item")?.focus();
+    }
+    // Typing must not reach the menu's own keyboard handling; Escape and Tab still close it.
+    if (event.key !== "Escape" && event.key !== "Tab") event.stopPropagation();
+  });
+  filterUi.repoMenu.addEventListener("opening", () => {
+    search.value = "";
+    renderRepoItems();
+  });
+  filterUi.repoMenu.addEventListener("opened", async () => {
+    await search.updateComplete;
+    search.focus();
+  });
   refreshFilterOptions();
   syncFilterBar();
 }

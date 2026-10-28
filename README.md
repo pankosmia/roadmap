@@ -64,17 +64,19 @@ GitHub colors, without the text before the ":" (for example "Spec'd" for
 labels with the selected version label; other labels are preserved.
 
 A one-line footer at the bottom of every page shows the issue count and the
-click/drag hint. Below the search bar (which spans the width of the columns),
-every page has a **View** button (tonal) and two filter chips,
+click/drag hint. Below the search bar (centered; its container spans the width of
+the columns), every page has a **View** button (tonal, layout icon) and two filter chips,
 **Assignee** and **Repository** (`filters.js`). Both chips are multi-select menus
 listing the assignees (plus **Unassigned**) and repositories of the loaded open
-issues, with their issue counts. A card is shown when it matches the selection of
+issues, with their issue counts; the Repository menu starts with a search field
+that is focused on open. A card is shown when it matches the selection of
 each chip (any selected value within a chip). A parent issue stays visible when
 one of its sub-issues matches, and the board summary reads "N of M issues" while
 filters are on. The search text is not part of the filters or of the views.
 The **View** menu offers the default (unfiltered) view, the saved views (apply,
 rename, delete), **Update** for the active view and **Save current filters as new
-view…** (named, unique names). The View button shows a colored dot when the chips
+view…** (named, unique names); **Update** and **Save** carry a dot while there is
+a pending difference. The View button shows a colored dot when the chips
 differ from the view that was active before they were touched: the default view,
 or the saved view that was applied. Filters and views are stored in the browser's
 local storage (`roadmap-filters`) and shared by all pages.

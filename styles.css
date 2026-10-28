@@ -206,11 +206,13 @@ h1 {
 .search-stack {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 12px;
   width: 100%;
 }
 
 .search-input {
+  width: min(360px, 100%);
   --md-outlined-text-field-container-shape: 28px;
   --md-outlined-text-field-top-space: 10px;
   --md-outlined-text-field-bottom-space: 10px;
@@ -223,7 +225,7 @@ h1 {
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 clamp(16px, 2.5vw, 32px);
+  padding: 4px clamp(16px, 2.5vw, 32px) 0;
   background: var(--md-sys-color-surface-container);
   color: var(--md-sys-color-on-surface-variant);
   font: var(--md-type-body-small);
@@ -1753,6 +1755,34 @@ md-icon.pr-closed { color: var(--pr-color); }
 .view-menu {
   min-width: 240px;
   max-height: min(60vh, 420px);
+}
+
+/* The assignee list is short: the menu fits it, with compact rows. */
+.filter-menu {
+  --md-menu-item-one-line-container-height: 44px;
+}
+
+#assignee-menu {
+  max-height: calc(100dvh - 160px);
+}
+
+.filter-search-row {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 8px 4px;
+  background: var(--md-sys-color-surface-container);
+}
+
+.filter-search {
+  --md-outlined-text-field-container-shape: 28px;
+  --md-outlined-text-field-top-space: 8px;
+  --md-outlined-text-field-bottom-space: 8px;
+}
+
+.icon-badge {
+  position: relative;
+  display: inline-flex;
 }
 
 .filter-option {
