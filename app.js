@@ -1940,7 +1940,7 @@ if (addButton) addButton.addEventListener("click", openNewIssuePanel);
 
 if (document.body.dataset.page === "detail") {
   const title = document.querySelector("#page-title");
-  if (detailVersion) title.textContent = `${detailVersion} — detailed view`;
+  if (detailVersion) title.textContent = detailVersion;
   else {
     title.textContent = "Unknown version";
     board.innerHTML = '<div class="empty-state"><md-icon>view_column</md-icon><span>Choose Backlog, Next or Current from the <a href="./">main board</a>.</span></div>';

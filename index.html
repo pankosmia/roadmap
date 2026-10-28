@@ -53,11 +53,6 @@
           <h1 id="page-title">Pankosmia roadmap</h1>
           <p class="intro">A cross-repository issue workflow organized by version.</p>
         </div>
-        <div class="heading-actions">
-          <md-filled-button id="add-button" type="button"><md-icon slot="icon">add</md-icon>Add</md-filled-button>
-          <md-outlined-button id="done-button" type="button"><md-icon slot="icon">archive</md-icon>Done</md-outlined-button>
-          <md-outlined-button id="pulls-button" type="button"><md-icon slot="icon">merge_type</md-icon>Pull requests<span id="pulls-badge" class="pulls-badge" hidden></span></md-outlined-button>
-        </div>
       </section>
 
       <section class="board-toolbar" aria-label="Search and filters">
@@ -65,6 +60,13 @@
           <md-outlined-text-field id="search-input" class="search-input" type="search" label="Search issues" placeholder="Search issue titles and text" aria-label="Search issue titles and text" autocomplete="off">
             <md-icon slot="leading-icon">search</md-icon>
           </md-outlined-text-field>
+        </div>
+        <div class="toolbar-row">
+          <div class="heading-actions">
+            <md-filled-button id="add-button" type="button"><md-icon slot="icon">add</md-icon>Add</md-filled-button>
+            <md-outlined-button id="done-button" type="button"><md-icon slot="icon">archive</md-icon>Done</md-outlined-button>
+            <md-outlined-button id="pulls-button" type="button"><md-icon slot="icon">merge_type</md-icon>Pull requests<span id="pulls-badge" class="pulls-badge" hidden></span></md-outlined-button>
+          </div>
           <div id="filter-bar" class="filter-bar" role="group" aria-label="Filters"></div>
         </div>
       </section>
