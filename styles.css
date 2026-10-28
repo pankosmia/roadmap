@@ -199,38 +199,15 @@ h1 {
 }
 
 .board-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
   flex: none;
-  gap: 12px 16px;
   margin: 12px 0;
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-.board-toolbar p {
-  margin: 0;
-}
-
-.board-info {
-  font: var(--md-type-label-large);
-}
-
-#board-summary {
-  font: var(--md-type-label-large);
-}
-
-.board-hint {
-  font: var(--md-type-body-small);
 }
 
 .search-stack {
   display: flex;
-  flex: 0 1 360px;
   flex-direction: column;
   gap: 12px;
-  min-width: 200px;
+  width: 100%;
 }
 
 .search-input {
@@ -239,28 +216,32 @@ h1 {
   --md-outlined-text-field-bottom-space: 10px;
 }
 
-/* On wide screens, equal side columns keep the search bar truly centered. */
-@media (min-width: 1400px) {
-  .board-toolbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px minmax(0, 1fr);
-    align-items: start;
-  }
+/* One line of text, as tall as the text itself. */
+.board-footer {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 clamp(16px, 2.5vw, 32px);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-type-body-small);
+}
 
-  .board-info,
-  .board-hint {
-    display: flex;
-    align-items: center;
-    min-height: 48px;
-  }
+.board-footer p {
+  margin: 0;
+  white-space: nowrap;
+}
 
-  .board-hint {
-    justify-content: flex-end;
-  }
+.board-info {
+  flex: none;
+}
 
-  .board-hint {
-    text-align: right;
-  }
+.board-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Board */
@@ -1464,10 +1445,6 @@ md-outlined-text-field {
     scroll-snap-align: start;
   }
 
-  .search-stack {
-    flex-basis: 100%;
-  }
-
   .issue-panel {
     border-radius: 0;
   }
@@ -1749,10 +1726,10 @@ md-icon.pr-closed { color: var(--pr-color); }
 }
 
 .view-button {
-  --md-outlined-button-container-height: 32px;
-  --md-outlined-button-leading-space: 12px;
-  --md-outlined-button-trailing-space: 16px;
-  --md-outlined-button-icon-size: 18px;
+  --md-filled-tonal-button-container-height: 32px;
+  --md-filled-tonal-button-leading-space: 12px;
+  --md-filled-tonal-button-trailing-space: 16px;
+  --md-filled-tonal-button-icon-size: 18px;
 }
 
 .view-badge {

@@ -341,7 +341,7 @@ function initFilters() {
   if (!bar) return;
   bar.innerHTML = `
     <div class="view-button-wrap">
-      <md-outlined-button id="view-button" class="view-button" type="button" aria-haspopup="menu"><md-icon slot="icon">bookmarks</md-icon>View</md-outlined-button>
+      <md-filled-tonal-button id="view-button" class="view-button" type="button" aria-haspopup="menu"><md-icon slot="icon">bookmarks</md-icon>View</md-filled-tonal-button>
       <span class="view-badge" hidden aria-hidden="true"></span>
       <md-menu id="view-menu" class="view-menu" anchor="view-button" positioning="popover" quick aria-label="View"></md-menu>
     </div>
@@ -374,11 +374,12 @@ function initFilters() {
   filterUi.viewMenu.addEventListener("click", onViewMenuClick, true);
 
   for (const [chip, menu] of [[filterUi.assigneeChip, filterUi.assigneeMenu], [filterUi.repoChip, filterUi.repoMenu]]) {
-    chip.addEventListener("click", () => {
+    // A filter chip toggles its own selected state (and flashes its check icon) on click. The capture
+    // listener stops that: the state follows the selection instead, and the click only toggles the menu.
+    chip.addEventListener("click", (event) => {
+      event.stopPropagation();
       menu.open = !menu.open;
-      // A filter chip toggles itself when clicked; its state must follow the selection instead.
-      setTimeout(syncFilterBar, 0);
-    });
+    }, true);
     menu.addEventListener("click", (event) => {
       const item = event.target.closest("md-menu-item[data-filter]");
       if (item) toggleFilterValue(item.dataset.filter, item.dataset.value);
