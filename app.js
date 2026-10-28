@@ -185,25 +185,14 @@ async function loadIssues({ force = false } = {}) {
   }
 
   try {
-    const query = encodeURIComponent(`org:${ORGANIZATION} is:issue is:open`);
-    const firstPage = await githubRequest(
-      `${API_ROOT}/search/issues?q=${query}&per_page=${PAGE_SIZE}&page=1`,
-      {},
-      accessToken
-    );
-    const totalCount = firstPage.total_count;
-    const pages = Math.ceil(Math.min(totalCount, 1000) / PAGE_SIZE);
-    const results = [...firstPage.items];
-
-    for (let page = 2; page <= pages; page += 1) {
-      summary.textContent = `Loading issues… ${Math.min(results.length, totalCount)} of ${totalCount}`;
-      const result = await githubRequest(
-        `${API_ROOT}/search/issues?q=${query}&per_page=${PAGE_SIZE}&page=${page}`,
-        {},
-        accessToken
-      );
-      results.push(...result.items);
+    const { items: openIssues, totalCount } = await searchAllIssues("is:open");
+    let closedIssues = [];
+    try {
+      closedIssues = (await searchAllIssues("is:closed")).items;
+    } catch (error) {
+      if (!cached) showNotice(`Closed issues could not be loaded: ${apiErrorMessage(error)}`, true);
     }
+    const results = [...openIssues, ...closedIssues];
 
     issues = results;
     saveIssuesCache();
@@ -216,7 +205,7 @@ async function loadIssues({ force = false } = {}) {
       showNotice(`GitHub search can return at most 1,000 results. Showing the first 1,000 of ${totalCount} issues.`);
     } else {
       const inconsistentIssues = issues.filter(
-        (issue) => issue.labels.filter((label) => isVersionLabel(label.name)).length > 1
+        (issue) => !isClosed(issue) && issue.labels.filter((label) => isVersionLabel(label.name)).length > 1
       ).length;
       if (inconsistentIssues > 0) {
         showNotice(
@@ -237,8 +226,23 @@ async function loadIssues({ force = false } = {}) {
   }
 }
 
+async function searchAllIssues(state) {
+  const query = encodeURIComponent(`org:${ORGANIZATION} is:issue ${state} sort:updated-desc`);
+  const firstPage = await githubRequest(`${API_ROOT}/search/issues?q=${query}&per_page=${PAGE_SIZE}&page=1`, {}, accessToken);
+  const totalCount = firstPage.total_count;
+  const pages = Math.ceil(Math.min(totalCount, 1000) / PAGE_SIZE);
+  const items = [...firstPage.items];
+  for (let page = 2; page <= pages; page += 1) {
+    summary.textContent = `Loading issues… ${Math.min(items.length, totalCount)} of ${totalCount}`;
+    const result = await githubRequest(`${API_ROOT}/search/issues?q=${query}&per_page=${PAGE_SIZE}&page=${page}`, {}, accessToken);
+    items.push(...result.items);
+  }
+  return { items, totalCount };
+}
+
 function summaryText() {
-  const count = detailVersion ? issues.filter((issue) => issueVersion(issue) === detailVersion).length : issues.length;
+  const boardIssues = issues.filter(isOnBoard);
+  const count = detailVersion ? boardIssues.filter((issue) => issueVersion(issue) === detailVersion).length : boardIssues.length;
   const scope = detailVersion ? ` in ${detailVersion}` : "";
   return `${count} ${count === 1 ? "issue" : "issues"}${scope}`;
 }
@@ -326,7 +330,7 @@ async function loadColumnLabelColors() {
 function renderBoard() {
   closeMoveMenu();
   board.replaceChildren();
-  const topLevelIssues = issues.filter((issue) => !isNestedSubIssue(issue) && matchesSearch(issue));
+  const topLevelIssues = issues.filter((issue) => isOnBoard(issue) && !isNestedSubIssue(issue) && matchesSearch(issue));
   const visibleIssues = detailVersion ? topLevelIssues.filter((issue) => issueVersion(issue) === detailVersion) : topLevelIssues;
   for (const version of COLUMNS) {
     const columnIssues = visibleIssues.filter((issue) => issueColumn(issue) === version);
@@ -413,6 +417,7 @@ function createIssueCard(issue) {
 
   card.innerHTML = `
     <div class="issue-meta">
+      ${statusIconHtml(issue)}
       <span class="repo-name" title="${escapeHtml(repository)}">${escapeHtml(repository)}</span>
       <span class="issue-number">#${number}</span>
     </div>
@@ -420,6 +425,7 @@ function createIssueCard(issue) {
     ${labels ? `<div class="issue-labels" aria-label="Issue labels">${labels}</div>` : ""}
     ${cardStats(issue)}
     <div class="card-footer">
+      ${pendingClosures.has(issue.id) ? '<md-text-button class="undo-close-button" type="button">Undo close</md-text-button>' : ""}
       <md-text-button class="move-button" data-issue-id="${issue.id}" trailing-icon aria-label="Move issue #${number} to ${detailVersion ? "stage" : "version"}" ${accessToken ? "" : "disabled"}>
         Move to
         <md-icon slot="icon">arrow_drop_down</md-icon>
@@ -447,6 +453,7 @@ function createIssueCard(issue) {
   }
 
   card.querySelector(".issue-title").addEventListener("click", () => openPanel(issue));
+  card.querySelector(".undo-close-button")?.addEventListener("click", () => reopenIssue(issue));
   const moveButton = card.querySelector(".move-button");
   moveButton.addEventListener("click", () => openMoveMenu(issue, moveButton));
   return card;
@@ -640,6 +647,302 @@ function showNotice(message, isError = false) {
   notice.classList.toggle("error", isError);
   notice.hidden = false;
 }
+
+const CLOSE_UNDO_MS = 30000;
+const ARCHIVE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+const pendingClosures = new Map();
+
+function isClosed(issue) {
+  return issue.state === "closed";
+}
+
+// A freshly closed issue stays on the board until its undo window ends.
+function isOnBoard(issue) {
+  return !isClosed(issue) || pendingClosures.has(issue.id);
+}
+
+function issueStatus(issue) {
+  if (!isClosed(issue)) return { key: "open", icon: "adjust", label: "Open" };
+  if (issue.state_reason === "not_planned") return { key: "not-planned", icon: "block", label: "Closed as not planned" };
+  if (issue.state_reason === "duplicate") return { key: "duplicate", icon: "block", label: "Closed as duplicate" };
+  return { key: "completed", icon: "check_circle", label: "Closed" };
+}
+
+function statusIconHtml(issue) {
+  const status = issueStatus(issue);
+  return `<md-icon class="status-icon status-${status.key}" role="img" title="${status.label}" aria-label="${status.label}">${status.icon}</md-icon>`;
+}
+
+function startPendingClosure(issue) {
+  clearTimeout(pendingClosures.get(issue.id));
+  pendingClosures.set(
+    issue.id,
+    setTimeout(() => {
+      pendingClosures.delete(issue.id);
+      renderBoard();
+      summary.textContent = summaryText();
+      refreshPanel();
+    }, CLOSE_UNDO_MS)
+  );
+}
+
+function issueApiUrl(issue) {
+  const [owner, repository] = repoOf(issue);
+  return `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/${issue.number}`;
+}
+
+async function changeIssueState(issue, body, duplicateOf = null) {
+  if (!accessToken) {
+    openAuthDialog();
+    return false;
+  }
+  const [owner, repository] = repoOf(issue);
+  notice.hidden = true;
+  if (panelElements) panelElements.error.hidden = true;
+  stateChangeBusy = true;
+  refreshPanel();
+  try {
+    if (duplicateOf) {
+      await githubRequest(
+        `${issueApiUrl(issue)}/comments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body: `Duplicate of ${repoOf(duplicateOf).join("/")}#${duplicateOf.number}` })
+        },
+        accessToken
+      );
+    }
+    const updated = await githubRequest(
+      issueApiUrl(issue),
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      accessToken
+    );
+    const merged = mergeUpdatedIssue(issue, updated);
+    if (isClosed(merged)) startPendingClosure(merged);
+    else {
+      clearTimeout(pendingClosures.get(merged.id));
+      pendingClosures.delete(merged.id);
+    }
+    saveIssuesCache();
+    renderBoard();
+    summary.textContent = summaryText();
+    return true;
+  } catch (error) {
+    const message = `Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`;
+    if (panelIssueId === issue.id) showPanelError(message);
+    else showNotice(message, true);
+    return false;
+  } finally {
+    stateChangeBusy = false;
+    refreshPanel();
+  }
+}
+
+function closeIssue(issue, reason, duplicateOf = null) {
+  return changeIssueState(issue, { state: "closed", state_reason: reason }, duplicateOf);
+}
+
+function reopenIssue(issue) {
+  return changeIssueState(issue, { state: "open", state_reason: "reopened" });
+}
+
+let stateChangeBusy = false;
+let closeMenu = null;
+let duplicateDialog = null;
+let duplicateTarget = null;
+
+function setupCloseControls(panel) {
+  const group = panel.querySelector(".close-split");
+  closeMenu = document.createElement("md-menu");
+  closeMenu.setAttribute("positioning", "popover");
+  closeMenu.quick = true;
+  closeMenu.anchorElement = group;
+  closeMenu.innerHTML = `
+    <md-menu-item data-action="completed"><md-icon slot="start">check_circle</md-icon><div slot="headline">Close as completed</div></md-menu-item>
+    <md-menu-item data-action="not_planned"><md-icon slot="start">block</md-icon><div slot="headline">Close as not planned</div></md-menu-item>
+    <md-menu-item data-action="duplicate"><md-icon slot="start">content_copy</md-icon><div slot="headline">Close as duplicate</div></md-menu-item>
+  `;
+  group.append(closeMenu);
+  const toggle = panel.querySelector(".close-menu-toggle");
+  toggle.addEventListener("click", () => {
+    closeMenu.open = !closeMenu.open;
+  });
+  panel.querySelector(".close-main").addEventListener("click", () => {
+    const issue = currentIssue();
+    if (issue) closeIssue(issue, "completed");
+  });
+  closeMenu.addEventListener("close-menu", (event) => {
+    const action = event.detail.initiator?.dataset?.action;
+    const issue = currentIssue();
+    if (!action || !issue) return;
+    if (action === "duplicate") openDuplicateDialog(issue);
+    else closeIssue(issue, action);
+  });
+  panel.querySelector(".reopen-button").addEventListener("click", () => {
+    const issue = currentIssue();
+    if (issue) reopenIssue(issue);
+  });
+}
+
+function renderStatusControls(issue) {
+  const { statusPill, closeSplit, reopenButton } = panelElements;
+  statusPill.hidden = Boolean(issue.draft);
+  closeSplit.hidden = Boolean(issue.draft) || isClosed(issue);
+  reopenButton.hidden = Boolean(issue.draft) || !isClosed(issue);
+  if (issue.draft) return;
+  const status = issueStatus(issue);
+  statusPill.className = `status-pill status-pill-${status.key}`;
+  statusPill.innerHTML = `<md-icon>${status.icon}</md-icon><span>${status.label}</span>`;
+  const disabled = !accessToken || stateChangeBusy;
+  closeSplit.querySelector(".close-main").disabled = disabled;
+  closeSplit.querySelector(".close-menu-toggle").disabled = disabled;
+  reopenButton.disabled = disabled;
+  reopenButton.textContent = pendingClosures.has(issue.id) ? "Undo close" : "Reopen issue";
+}
+
+function ensureDuplicateDialog() {
+  if (duplicateDialog) return duplicateDialog;
+  duplicateDialog = document.createElement("md-dialog");
+  duplicateDialog.innerHTML = `
+    <div slot="headline">Close as duplicate</div>
+    <div slot="content" class="duplicate-content">
+      <p class="dialog-copy">Pick the original issue. A "Duplicate of …" comment will be added before closing.</p>
+      <md-outlined-text-field class="duplicate-search" label="Search issues" placeholder="Title, number or repository" autocomplete="off">
+        <md-icon slot="leading-icon">search</md-icon>
+      </md-outlined-text-field>
+      <div class="duplicate-results" role="listbox" aria-label="Issues"></div>
+    </div>
+    <div slot="actions">
+      <md-text-button class="duplicate-cancel" type="button">Cancel</md-text-button>
+      <md-filled-button class="duplicate-confirm" type="button" disabled>Close as duplicate</md-filled-button>
+    </div>
+  `;
+  document.body.append(duplicateDialog);
+  duplicateDialog.querySelector(".duplicate-search").addEventListener("input", renderDuplicateResults);
+  duplicateDialog.querySelector(".duplicate-cancel").addEventListener("click", () => duplicateDialog.close());
+  duplicateDialog.querySelector(".duplicate-confirm").addEventListener("click", async () => {
+    const issue = duplicateDialog.issue;
+    const original = duplicateTarget;
+    if (!issue || !original) return;
+    duplicateDialog.close();
+    await closeIssue(issue, "duplicate", original);
+  });
+  return duplicateDialog;
+}
+
+function openDuplicateDialog(issue) {
+  const dialog = ensureDuplicateDialog();
+  dialog.issue = issue;
+  duplicateTarget = null;
+  dialog.querySelector(".duplicate-search").value = "";
+  renderDuplicateResults();
+  dialog.show();
+}
+
+function renderDuplicateResults() {
+  const dialog = duplicateDialog;
+  const term = dialog.querySelector(".duplicate-search").value.trim().toLowerCase().replace(/^#/, "");
+  const matches = issues
+    .filter((item) => item.id !== dialog.issue.id)
+    .filter((item) => !term || `${item.title} ${repoOf(item).join("/")} ${item.number}`.toLowerCase().includes(term))
+    .slice(0, 30);
+  const list = dialog.querySelector(".duplicate-results");
+  list.replaceChildren();
+  dialog.querySelector(".duplicate-confirm").disabled = !duplicateTarget;
+  if (matches.length === 0) {
+    list.innerHTML = '<p class="duplicate-empty">No matching issue.</p>';
+    return;
+  }
+  for (const item of matches) {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "duplicate-option";
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(duplicateTarget?.id === item.id));
+    option.innerHTML = `${statusIconHtml(item)}<span class="duplicate-title">${escapeHtml(item.title)}</span><span class="duplicate-ref">${escapeHtml(repoOf(item).join("/"))}#${item.number}</span>`;
+    option.addEventListener("click", () => {
+      duplicateTarget = item;
+      renderDuplicateResults();
+    });
+    list.append(option);
+  }
+}
+
+let doneDialog = null;
+let doneTab = 0;
+
+function ensureDoneDialog() {
+  if (doneDialog) return doneDialog;
+  doneDialog = document.createElement("md-dialog");
+  doneDialog.className = "done-dialog";
+  doneDialog.innerHTML = `
+    <div slot="headline">Done</div>
+    <div slot="content" class="done-content">
+      <md-tabs aria-label="Closed issues">
+        <md-primary-tab id="done-tab">Done</md-primary-tab>
+        <md-primary-tab id="archived-tab">Archived</md-primary-tab>
+      </md-tabs>
+      <div class="done-list"></div>
+    </div>
+    <div slot="actions"><md-text-button class="done-close" type="button">Close</md-text-button></div>
+  `;
+  document.body.append(doneDialog);
+  const tabs = doneDialog.querySelector("md-tabs");
+  tabs.addEventListener("change", () => {
+    doneTab = tabs.activeTabIndex;
+    renderDoneList();
+  });
+  doneDialog.querySelector(".done-close").addEventListener("click", () => doneDialog.close());
+  return doneDialog;
+}
+
+function closedIssueGroups() {
+  const now = Date.now();
+  const closed = issues
+    .filter((issue) => isClosed(issue) && !pendingClosures.has(issue.id))
+    .filter((issue) => !detailVersion || issueVersion(issue) === detailVersion)
+    .sort((a, b) => Date.parse(b.closed_at) - Date.parse(a.closed_at));
+  const isArchived = (issue) => now - Date.parse(issue.closed_at) > ARCHIVE_AFTER_MS;
+  return { done: closed.filter((issue) => !isArchived(issue)), archived: closed.filter(isArchived) };
+}
+
+function renderDoneList() {
+  const { done, archived } = closedIssueGroups();
+  const dialog = ensureDoneDialog();
+  dialog.querySelector("#done-tab").textContent = `Done (${done.length})`;
+  dialog.querySelector("#archived-tab").textContent = `Archived (${archived.length})`;
+  const list = dialog.querySelector(".done-list");
+  const shown = doneTab === 0 ? done : archived;
+  list.replaceChildren();
+  if (shown.length === 0) {
+    list.innerHTML = `<p class="duplicate-empty">${doneTab === 0 ? "No issue closed in the last 30 days." : "No archived issue."}</p>`;
+    return;
+  }
+  for (const issue of shown) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "duplicate-option";
+    const closedOn = new Date(issue.closed_at).toLocaleDateString();
+    item.innerHTML = `${statusIconHtml(issue)}<span class="duplicate-title">${escapeHtml(issue.title)}</span><span class="duplicate-ref">${escapeHtml(repoOf(issue).join("/"))}#${issue.number} · ${closedOn}</span>`;
+    item.addEventListener("click", () => {
+      dialog.close();
+      openPanel(issue);
+    });
+    list.append(item);
+  }
+}
+
+function openDoneDialog() {
+  const dialog = ensureDoneDialog();
+  doneTab = 0;
+  dialog.querySelector("md-tabs").activeTabIndex = 0;
+  renderDoneList();
+  dialog.show();
+}
+
+const doneButton = document.querySelector("#done-button");
+if (doneButton) doneButton.addEventListener("click", openDoneDialog);
 
 function clearTokenField() {
   tokenInput.value = "";
@@ -839,8 +1142,14 @@ function ensurePanel() {
           <span class="repo-field-value"></span>
           <md-icon>arrow_drop_down</md-icon>
         </button>
+        <div class="status-pill" hidden></div>
         <md-outlined-text-field class="panel-title-input" label="Title" type="text" autocomplete="off"></md-outlined-text-field>
         <div class="panel-save-row">
+          <div class="close-split">
+            <md-outlined-button class="close-main" type="button"><md-icon slot="icon">check_circle</md-icon>Close issue</md-outlined-button>
+            <md-outlined-icon-button class="close-menu-toggle" type="button" aria-label="More close options" aria-haspopup="menu"><md-icon>arrow_drop_down</md-icon></md-outlined-icon-button>
+          </div>
+          <md-outlined-button class="reopen-button" type="button" hidden>Reopen issue</md-outlined-button>
           <md-filled-button class="panel-save" type="button">Save</md-filled-button>
         </div>
       </div>
@@ -868,6 +1177,9 @@ function ensurePanel() {
     repoField: panel.querySelector(".panel-repo-field"),
     resizer: panel.querySelector(".panel-resizer"),
     save: panel.querySelector(".panel-save"),
+    statusPill: panel.querySelector(".status-pill"),
+    closeSplit: panel.querySelector(".close-split"),
+    reopenButton: panel.querySelector(".reopen-button"),
     controls: panel.querySelector(".panel-controls")
   };
   overlay.addEventListener("click", requestClosePanel);
@@ -878,6 +1190,7 @@ function ensurePanel() {
     clearResolvedValidationError();
   });
   panelElements.save.addEventListener("click", saveTitleAndDescription);
+  setupCloseControls(panel);
   setupPanelResizer(panel, panelElements.resizer);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && panelIssueId !== null && !document.querySelector("md-dialog[open]")) requestClosePanel();
@@ -1114,6 +1427,7 @@ function refreshPanel() {
   panelElements.title.disabled = !accessToken;
   descriptionEditor.disabled = !accessToken;
   panelElements.save.disabled = !accessToken;
+  renderStatusControls(issue);
   renderPanelControls();
 }
 
