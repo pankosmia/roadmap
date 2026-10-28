@@ -240,5 +240,4 @@ function openOpenPullsDialog() {
 }
 
 const pullsButton = document.querySelector("#pulls-button");
-updatePullsBadge();
 if (pullsButton) pullsButton.addEventListener("click", openOpenPullsDialog);
