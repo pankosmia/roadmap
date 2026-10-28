@@ -130,13 +130,57 @@ function apiErrorMessage(error) {
     : `GitHub's unauthenticated API limit has been reached. Connect a token to raise it.${when}`;
 }
 
-async function loadIssues() {
+const ISSUES_CACHE_KEY = "roadmap-issues-cache";
+const ISSUES_CACHE_TTL = 5 * 60 * 1000;
+
+function readIssuesCache() {
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(ISSUES_CACHE_KEY));
+    return cached && Array.isArray(cached.issues) ? cached : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveIssuesCache() {
+  try {
+    sessionStorage.setItem(ISSUES_CACHE_KEY, JSON.stringify({ time: Date.now(), issues }));
+  } catch {
+    // Storage may be unavailable or full; the board then reloads on each page view.
+  }
+}
+
+function clearIssuesCache() {
+  try {
+    sessionStorage.removeItem(ISSUES_CACHE_KEY);
+  } catch {
+    // Nothing to clear when storage is unavailable.
+  }
+}
+
+async function loadIssues({ force = false } = {}) {
   if (isLoading || (document.body.dataset.page === "detail" && !detailVersion)) return;
   isLoading = true;
   refreshButton.disabled = true;
   notice.hidden = true;
-  board.innerHTML = LOADING_HTML;
-  summary.textContent = "Loading issues…";
+
+  // Show cached issues at once; only refetch when they are stale or a refresh is forced.
+  const cached = force ? null : readIssuesCache();
+  if (cached) {
+    issues = cached.issues;
+    await loadColumnLabelColors();
+    renderBoard();
+    refreshPanel();
+    summary.textContent = summaryText();
+    if (Date.now() - cached.time < ISSUES_CACHE_TTL) {
+      isLoading = false;
+      refreshButton.disabled = false;
+      return;
+    }
+  } else {
+    board.innerHTML = LOADING_HTML;
+    summary.textContent = "Loading issues…";
+  }
 
   try {
     const query = encodeURIComponent(`org:${ORGANIZATION} is:issue is:open`);
@@ -160,6 +204,7 @@ async function loadIssues() {
     }
 
     issues = results;
+    saveIssuesCache();
     loadFailed = false;
     await loadColumnLabelColors();
     renderBoard();
@@ -178,9 +223,11 @@ async function loadIssues() {
       }
     }
   } catch (error) {
-    loadFailed = true;
-    board.innerHTML = '<div class="empty-state"><md-icon>cloud_off</md-icon><span>Could not load issues from GitHub.</span></div>';
-    summary.textContent = "Issues could not be loaded";
+    if (!cached) {
+      loadFailed = true;
+      board.innerHTML = '<div class="empty-state"><md-icon>cloud_off</md-icon><span>Could not load issues from GitHub.</span></div>';
+      summary.textContent = "Issues could not be loaded";
+    }
     showNotice(apiErrorMessage(error), true);
   } finally {
     isLoading = false;
@@ -555,6 +602,7 @@ async function moveIssue(issue, version) {
     );
     const index = issues.findIndex((item) => item.id === issue.id);
     if (index !== -1) issues[index] = updated;
+    saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
     refreshPanel();
@@ -624,13 +672,14 @@ async function connectToken(event) {
   try {
     const user = await githubRequest(`${API_ROOT}/user`, {}, candidate);
     accessToken = candidate;
+    clearIssuesCache();
     storeToken(candidate, rememberInput.checked);
     clearTokenField();
     setAuthState(user.login);
     closeAuthDialog();
     renderBoard();
     refreshPanel();
-    if (loadFailed) loadIssues();
+    if (loadFailed) loadIssues({ force: true });
   } catch (error) {
     authError.textContent = `Could not connect: ${apiErrorMessage(error)}`;
     authError.hidden = false;
@@ -642,6 +691,7 @@ async function connectToken(event) {
 
 function disconnectToken() {
   accessToken = "";
+  clearIssuesCache();
   clearStoredToken();
   clearTokenField();
   setAuthState("");
@@ -1083,6 +1133,7 @@ async function createIssue(draft, title) {
       accessToken
     );
     issues.unshift(created);
+    saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
     closePanel();
@@ -1125,6 +1176,7 @@ async function patchIssue(issue, body) {
     const index = issues.findIndex((item) => item.id === issue.id);
     const merged = { ...(index === -1 ? issue : issues[index]), ...updated };
     if (index !== -1) issues[index] = merged;
+    saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
     return merged;
@@ -1314,7 +1366,7 @@ if (document.body.dataset.page === "detail") {
   }
 }
 
-refreshButton.addEventListener("click", loadIssues);
+refreshButton.addEventListener("click", () => loadIssues({ force: true }));
 authButton.addEventListener("click", () => {
   if (accessToken) disconnectToken();
   else openAuthDialog();
