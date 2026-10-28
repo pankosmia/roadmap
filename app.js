@@ -792,9 +792,13 @@ function setupCloseControls(panel) {
   `;
   group.append(closeMenu);
   const toggle = panel.querySelector(".close-menu-toggle");
+  const syncExpanded = () => toggle.setAttribute("aria-expanded", String(closeMenu.open));
   toggle.addEventListener("click", () => {
     closeMenu.open = !closeMenu.open;
+    syncExpanded();
   });
+  closeMenu.addEventListener("opened", syncExpanded);
+  closeMenu.addEventListener("closed", syncExpanded);
   panel.querySelector(".close-main").addEventListener("click", () => {
     const issue = currentIssue();
     if (issue) closeIssue(issue, "completed");
@@ -1175,7 +1179,7 @@ function ensurePanel() {
         <div class="panel-save-row">
           <div class="close-split">
             <md-outlined-button class="close-main" type="button"><md-icon slot="icon">check_circle</md-icon>Close issue</md-outlined-button>
-            <md-outlined-icon-button class="close-menu-toggle" type="button" aria-label="More close options" aria-haspopup="menu"><md-icon>arrow_drop_down</md-icon></md-outlined-icon-button>
+            <md-outlined-icon-button class="close-menu-toggle" type="button" aria-label="More close options" aria-haspopup="menu" aria-expanded="false"><md-icon>arrow_drop_down</md-icon></md-outlined-icon-button>
           </div>
           <md-outlined-button class="reopen-button" type="button" hidden>Reopen issue</md-outlined-button>
           <md-filled-button class="panel-save" type="button">Save</md-filled-button>
