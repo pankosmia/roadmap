@@ -209,7 +209,7 @@ async function loadIssues({ force = false } = {}) {
     refreshPanel();
     summary.textContent = summaryText();
     loadPullRequests({ force: true });
-    loadOpenPulls({ force: true });
+    loadOpenPulls();
     if (totalCount > 1000) {
       showNotice(`GitHub search can return at most 1,000 results. Showing the first 1,000 of ${totalCount} issues.`);
     } else {

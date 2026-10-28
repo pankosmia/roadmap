@@ -27,7 +27,35 @@ const OPEN_PULLS_QUERY = `query($search: String!, $cursor: String) {
   }
 }`;
 
-let openPulls = { time: 0, items: [], total: 0 };
+const OPEN_PULLS_CACHE_KEY = "roadmap-open-pulls-cache";
+
+function readOpenPullsCache() {
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(OPEN_PULLS_CACHE_KEY));
+    return cached && Array.isArray(cached.items) ? cached : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveOpenPullsCache() {
+  try {
+    sessionStorage.setItem(OPEN_PULLS_CACHE_KEY, JSON.stringify(openPulls));
+  } catch {
+    // Storage may be unavailable or full; the list is then fetched again on each page view.
+  }
+}
+
+function clearOpenPullsCache() {
+  try {
+    sessionStorage.removeItem(OPEN_PULLS_CACHE_KEY);
+  } catch {
+    // Nothing to clear when storage is unavailable.
+  }
+}
+
+// The cached list is shown at once after a page change; loadOpenPulls refreshes it when it is stale.
+let openPulls = readOpenPullsCache() || { time: 0, items: [], total: 0 };
 let openPullsRun = 0;
 let openPullsDialog = null;
 let openPullsLoading = false;
@@ -108,7 +136,10 @@ async function loadOpenPulls({ force = false } = {}) {
   renderOpenPulls();
   try {
     const result = await fetchOpenPulls(run);
-    if (result) openPulls = { time: Date.now(), ...result };
+    if (result) {
+      openPulls = { time: Date.now(), ...result };
+      saveOpenPullsCache();
+    }
   } catch (error) {
     if (run === openPullsRun) openPullsError = apiErrorMessage(error);
   }
@@ -122,6 +153,7 @@ function clearOpenPulls() {
   openPullsLoading = false;
   openPullsError = "";
   openPulls = { time: 0, items: [], total: 0 };
+  clearOpenPullsCache();
   updatePullsBadge();
   renderOpenPulls();
 }
@@ -216,15 +248,21 @@ function renderOpenPulls() {
     return;
   }
   const { items, total } = openPulls;
+  if (openPullsError && items.length === 0) {
+    summaryElement.textContent = "";
+    list.innerHTML = `<div class="duplicate-empty"><p>Pull requests could not be loaded: ${escapeHtml(openPullsError)}</p><md-text-button class="pulls-retry" type="button">Retry</md-text-button></div>`;
+    list.querySelector(".pulls-retry").addEventListener("click", () => loadOpenPulls({ force: true }));
+    return;
+  }
   const orphans = items.filter((pull) => pull.issues.length === 0).length;
   const alerts = items.filter((pull) => pull.alert).length;
   const shown = alertsOnly ? items.filter((pull) => pull.alert) : items;
   openPullsDialog.querySelector(".pulls-alert-filter").label = `Alerts only (${alerts})`;
   const truncated = total > items.length ? ` Showing the first ${items.length} of ${total}.` : "";
-  summaryElement.textContent = openPullsError
-    ? `Pull requests could not be loaded: ${openPullsError}`
-    : `${items.length} open · ${orphans} without a linked issue · ${alerts} ${alerts === 1 ? "alert" : "alerts"}.${truncated}`;
-  if (shown.length === 0 && !openPullsError) {
+  const counts = `${items.length} open · ${orphans} without a linked issue · ${alerts} ${alerts === 1 ? "alert" : "alerts"}.${truncated}`;
+  if (openPullsError) summaryElement.textContent = `Pull requests could not be refreshed (${openPullsError}). Showing the last loaded list. ${counts}`;
+  else summaryElement.textContent = openPullsLoading ? `Refreshing… ${counts}` : counts;
+  if (shown.length === 0) {
     list.innerHTML = `<p class="duplicate-empty">${alertsOnly ? "No pull request needs attention." : "No open pull request."}</p>`;
     return;
   }
