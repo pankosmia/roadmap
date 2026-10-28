@@ -290,38 +290,20 @@ h1 {
   flex: none;
   min-height: 56px;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 8px 0 16px;
+  gap: 8px;
+  padding: 0 16px 0 8px;
 }
 
-.column-title-wrap,
-.column-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.column-heading .issue-count {
+  margin-left: auto;
 }
 
 .column-dot {
+  flex: none;
   width: 10px;
   height: 10px;
   border-radius: 50%;
-}
-
-.column[data-version="Unassigned"] .column-dot {
   background: var(--md-sys-color-outline);
-}
-
-.column[data-version="Backlog"] .column-dot {
-  background: var(--md-sys-color-tertiary);
-}
-
-.column[data-version="Next"] .column-dot {
-  background: var(--md-sys-color-secondary);
-}
-
-.column[data-version="Current"] .column-dot,
-body[data-page="detail"] .column-dot {
-  background: var(--md-sys-color-primary);
 }
 
 .column h2 {
@@ -377,9 +359,33 @@ body[data-page="detail"] .column-dot {
 }
 
 .column.collapsed {
-  flex: 0 0 180px;
-  min-width: 180px;
-  min-height: 0;
+  flex: 0 0 56px;
+  align-self: flex-start;
+  min-width: 56px;
+  max-width: 56px;
+}
+
+.column.collapsed .column-heading {
+  flex-direction: column;
+  padding: 8px 0 16px;
+}
+
+.column.collapsed .column-heading .issue-count {
+  margin-left: 0;
+}
+
+.column.collapsed h2 {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+}
+
+.column.collapsed .column-link {
+  padding: 8px 6px;
+}
+
+.column.collapsed .column-link md-icon {
+  display: none;
 }
 
 .column.collapsed .issue-list {

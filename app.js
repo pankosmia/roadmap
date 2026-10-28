@@ -161,6 +161,7 @@ async function loadIssues() {
 
     issues = results;
     loadFailed = false;
+    await loadColumnLabelColors();
     renderBoard();
     refreshPanel();
     summary.textContent = summaryText();
@@ -249,6 +250,30 @@ function matchesSearch(issue) {
   return matchesText(issue) || subIssuesOf(issue).some(matchesText);
 }
 
+const labelColors = new Map();
+
+function columnLabelName(column) {
+  return detailVersion ? flowLabelName(column) : VERSION_LABELS.get(column);
+}
+
+function labelColor(labelName) {
+  return labelName ? labelColors.get(labelName) || "" : "";
+}
+
+function rememberLabelColors(labels) {
+  for (const label of labels) {
+    if (/^[0-9a-f]{6}$/i.test(label.color || "")) labelColors.set(label.name, label.color);
+  }
+}
+
+async function loadColumnLabelColors() {
+  try {
+    rememberLabelColors(await repoLabels(ORGANIZATION, "roadmap"));
+  } catch {
+    // Dots keep the neutral fallback color when the labels cannot be loaded.
+  }
+}
+
 function renderBoard() {
   closeMoveMenu();
   board.replaceChildren();
@@ -262,18 +287,16 @@ function renderBoard() {
     column.setAttribute("aria-label", `${version}, ${columnIssues.length} issues`);
     column.innerHTML = `
       <header class="column-heading">
-        <div class="column-title-wrap">
-          <span class="column-dot" aria-hidden="true"></span>
-          <h2>${!detailVersion && DETAIL_VERSIONS.includes(version) ? `<a class="column-link" href="detail.html?version=${version}" aria-label="Open ${version} details">${version}<md-icon>chevron_right</md-icon></a>` : `<span class="column-title-static">${escapeHtml(version)}</span>`}</h2>
-        </div>
-        <div class="column-actions">
-          <span class="issue-count">${columnIssues.length}</span>
-          <md-icon-button class="collapse-button" aria-label="Collapse ${escapeHtml(version)}"><md-icon>expand_more</md-icon></md-icon-button>
-        </div>
+        <md-icon-button class="collapse-button" aria-label="Collapse ${escapeHtml(version)}"><md-icon>expand_more</md-icon></md-icon-button>
+        <span class="column-dot" aria-hidden="true"></span>
+        <h2>${!detailVersion && DETAIL_VERSIONS.includes(version) ? `<a class="column-link" href="detail.html?version=${version}" aria-label="Open ${version} details">${version}<md-icon>chevron_right</md-icon></a>` : `<span class="column-title-static">${escapeHtml(version)}</span>`}</h2>
+        <span class="issue-count">${columnIssues.length}</span>
       </header>
       <div class="issue-list" data-drop-version="${escapeHtml(version)}"></div>
     `;
     column.dataset.dropVersion = version;
+    const dotColor = labelColor(columnLabelName(version));
+    if (dotColor) column.querySelector(".column-dot").style.background = `#${dotColor}`;
     const collapseButton = column.querySelector(".collapse-button");
     const applyCollapsed = () => {
       const collapsed = collapsedColumns.has(version);
@@ -632,6 +655,7 @@ const labelCache = new Map();
 const assigneeCache = new Map();
 let panelElements = null;
 let panelIssueId = null;
+let panelClosing = false;
 let panelMeta = { labels: null, assignees: null };
 let panelBusy = false;
 let descriptionEditor = null;
@@ -671,7 +695,23 @@ function repoOf(issue) {
   return issue.repository_url.split("/").slice(-2);
 }
 
+const DRAFT_ID = "new-issue";
+let draftIssue = null;
+
+function newDraftIssue(repository = "roadmap") {
+  return {
+    id: DRAFT_ID,
+    draft: true,
+    title: "",
+    body: "",
+    labels: [],
+    assignees: [],
+    repository_url: `${API_ROOT}/repos/${ORGANIZATION}/${repository}`
+  };
+}
+
 function currentIssue() {
+  if (panelIssueId === DRAFT_ID) return draftIssue;
   return issues.find((item) => item.id === panelIssueId);
 }
 
@@ -728,6 +768,7 @@ function ensurePanel() {
       <div class="panel-main">
         <p class="panel-error auth-error" role="alert" hidden></p>
         <p class="panel-readonly"><md-icon>lock</md-icon>Connect GitHub to edit this issue.</p>
+        <md-outlined-select class="panel-repo-select" label="Repository" hidden></md-outlined-select>
         <md-outlined-text-field class="panel-title-input" label="Title" type="text" autocomplete="off"></md-outlined-text-field>
         <div class="panel-save-row">
           <md-filled-button class="panel-save" type="button">Save</md-filled-button>
@@ -754,16 +795,18 @@ function ensurePanel() {
     error: panel.querySelector(".panel-error"),
     readonly: panel.querySelector(".panel-readonly"),
     title: panel.querySelector(".panel-title-input"),
+    repoSelect: panel.querySelector(".panel-repo-select"),
     resizer: panel.querySelector(".panel-resizer"),
     save: panel.querySelector(".panel-save"),
     controls: panel.querySelector(".panel-controls")
   };
-  overlay.addEventListener("click", closePanel);
-  panel.querySelector(".panel-close").addEventListener("click", closePanel);
+  overlay.addEventListener("click", requestClosePanel);
+  panel.querySelector(".panel-close").addEventListener("click", requestClosePanel);
+  panelElements.repoSelect.addEventListener("change", onDraftRepoChange);
   panelElements.save.addEventListener("click", saveTitleAndDescription);
   setupPanelResizer(panel, panelElements.resizer);
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && panelIssueId !== null && !document.querySelector("md-dialog[open]")) closePanel();
+    if (event.key === "Escape" && panelIssueId !== null && !document.querySelector("md-dialog[open]")) requestClosePanel();
   });
   return panelElements;
 }
@@ -862,34 +905,106 @@ function openPanel(issue) {
   elements.panel.hidden = false;
   refreshPanel();
   elements.title.focus();
+  loadPanelMeta(issue);
+}
 
+async function openNewIssuePanel() {
+  if (!accessToken) {
+    openAuthDialog();
+    return;
+  }
+  draftIssue = newDraftIssue();
+  const select = ensurePanel().repoSelect;
+  select.innerHTML = repoOptionHtml("roadmap");
+  openPanel(draftIssue);
+  const names = await loadOrganizationRepos();
+  if (panelIssueId !== DRAFT_ID) return;
+  const selected = select.value;
+  select.innerHTML = names.map(repoOptionHtml).join("");
+  select.value = selected;
+}
+
+function onDraftRepoChange() {
+  if (panelIssueId !== DRAFT_ID) return;
+  draftIssue.repository_url = `${API_ROOT}/repos/${ORGANIZATION}/${panelElements.repoSelect.value}`;
+  draftIssue.labels = [];
+  draftIssue.assignees = [];
+  panelMeta = { labels: null, assignees: null };
+  refreshPanel();
+  loadPanelMeta(draftIssue);
+}
+
+function loadPanelMeta(issue) {
   const [owner, repository] = repoOf(issue);
   const issueId = issue.id;
+  const isCurrent = () => panelIssueId === issueId && repoOf(currentIssue()).join("/") === `${owner}/${repository}`;
   repoLabels(owner, repository)
     .then((labels) => {
-      if (panelIssueId === issueId) panelMeta.labels = labels.map((label) => label.name);
+      if (isCurrent()) panelMeta.labels = labels.map((label) => label.name);
     })
     .catch((error) => {
-      if (panelIssueId === issueId) showPanelError(`Could not load labels: ${apiErrorMessage(error)}`);
+      if (isCurrent()) showPanelError(`Could not load labels: ${apiErrorMessage(error)}`);
     })
     .finally(() => {
-      if (panelIssueId === issueId) renderPanelControls();
+      if (isCurrent()) renderPanelControls();
     });
   repoAssignees(owner, repository)
     .then((users) => {
-      if (panelIssueId === issueId) panelMeta.assignees = users;
+      if (isCurrent()) panelMeta.assignees = users;
     })
     .catch(() => {
-      if (panelIssueId === issueId) panelMeta.assignees = [];
+      if (isCurrent()) panelMeta.assignees = [];
     })
     .finally(() => {
-      if (panelIssueId === issueId) renderPanelControls();
+      if (isCurrent()) renderPanelControls();
     });
+}
+
+function hasUnsavedChanges() {
+  const issue = currentIssue();
+  if (!issue || !panelElements) return false;
+  const title = panelElements.title.value.trim();
+  const body = descriptionEditor.value;
+  if (issue.draft) return Boolean(title || body.trim() || issue.labels.length || issue.assignees.length);
+  return title !== issue.title || body !== (issue.body || "");
+}
+
+let discardDialog = null;
+
+function confirmDiscard() {
+  if (!discardDialog) {
+    discardDialog = document.createElement("md-dialog");
+    discardDialog.innerHTML = `
+      <div slot="headline">Discard changes?</div>
+      <form id="discard-form" slot="content" method="dialog">Your unsaved changes will be lost.</form>
+      <div slot="actions">
+        <md-text-button form="discard-form" value="keep" autofocus>Keep editing</md-text-button>
+        <md-filled-button form="discard-form" value="discard">Discard</md-filled-button>
+      </div>
+    `;
+    document.body.append(discardDialog);
+  }
+  discardDialog.returnValue = "";
+  return new Promise((resolve) => {
+    discardDialog.addEventListener("closed", () => resolve(discardDialog.returnValue === "discard"), { once: true });
+    discardDialog.show();
+  });
+}
+
+async function requestClosePanel() {
+  if (panelIssueId === null || panelClosing) return;
+  panelClosing = true;
+  try {
+    if (!hasUnsavedChanges() || (await confirmDiscard())) closePanel();
+  } finally {
+    panelClosing = false;
+  }
 }
 
 function closePanel() {
   if (!panelElements) return;
   panelIssueId = null;
+  draftIssue = null;
   panelElements.overlay.hidden = true;
   panelElements.panel.hidden = true;
 }
@@ -902,8 +1017,12 @@ function refreshPanel() {
     return;
   }
   const [owner, repository] = repoOf(issue);
-  panelElements.ref.textContent = `${owner}/${repository} #${issue.number}`;
-  panelElements.link.href = issue.html_url;
+  panelElements.ref.textContent = issue.draft ? "New issue" : `${owner}/${repository} #${issue.number}`;
+  panelElements.link.hidden = Boolean(issue.draft);
+  if (!issue.draft) panelElements.link.href = issue.html_url;
+  panelElements.repoSelect.hidden = !issue.draft;
+  panelElements.repoSelect.disabled = panelBusy;
+  panelElements.save.textContent = issue.draft ? "Create" : "Save";
   panelElements.readonly.hidden = Boolean(accessToken);
   panelElements.title.disabled = !accessToken;
   descriptionEditor.disabled = !accessToken;
@@ -925,6 +1044,10 @@ async function saveTitleAndDescription() {
     showPanelError("The title cannot be empty.");
     return;
   }
+  if (issue.draft) {
+    await createIssue(issue, title);
+    return;
+  }
   panelElements.save.textContent = "Saving…";
   const updated = await patchIssue(issue, { title, body: descriptionEditor.value });
   panelElements.save.textContent = "Save";
@@ -934,10 +1057,56 @@ async function saveTitleAndDescription() {
   }
 }
 
+async function createIssue(draft, title) {
+  if (!accessToken) {
+    openAuthDialog();
+    return;
+  }
+  const [owner, repository] = repoOf(draft);
+  panelBusy = true;
+  panelElements.error.hidden = true;
+  panelElements.save.textContent = "Creating…";
+  renderPanelControls();
+  try {
+    const created = await githubRequest(
+      `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          body: descriptionEditor.value,
+          labels: draft.labels.map((label) => label.name),
+          assignees: draft.assignees.map((user) => user.login)
+        })
+      },
+      accessToken
+    );
+    issues.unshift(created);
+    renderBoard();
+    summary.textContent = summaryText();
+    closePanel();
+  } catch (error) {
+    showPanelError(`Could not create the issue: ${apiErrorMessage(error)}`);
+  } finally {
+    panelBusy = false;
+    refreshPanel();
+  }
+}
+
 async function patchIssue(issue, body) {
   if (!accessToken) {
     openAuthDialog();
     return null;
+  }
+  if (issue.draft) {
+    if (body.labels) issue.labels = body.labels.map((name) => ({ name }));
+    if (body.assignees) {
+      const known = [...(panelMeta.assignees || []), ...issue.assignees];
+      issue.assignees = body.assignees.map((login) => known.find((user) => user.login === login));
+    }
+    renderPanelControls();
+    return issue;
   }
   const [owner, repository] = repoOf(issue);
   panelBusy = true;
@@ -1118,8 +1287,6 @@ function bindPanelControls(issue) {
   });
 }
 
-let addDialog = null;
-
 async function loadOrganizationRepos() {
   const names = new Set(["roadmap"]);
   for (const issue of issues) names.add(repoOf(issue)[1]);
@@ -1132,84 +1299,11 @@ async function loadOrganizationRepos() {
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
-function ensureAddDialog() {
-  if (addDialog) return addDialog;
-  const dialog = document.createElement("md-dialog");
-  dialog.setAttribute("aria-labelledby", "add-title");
-  dialog.innerHTML = `
-    <div slot="headline" id="add-title">Add an issue</div>
-    <form id="add-form" slot="content">
-      <md-outlined-select id="add-repo" label="Repository"></md-outlined-select>
-      <md-outlined-text-field id="add-title-input" label="Title" type="text" autocomplete="off" required autofocus></md-outlined-text-field>
-      <p class="auth-error add-error" role="alert" hidden></p>
-    </form>
-    <div slot="actions">
-      <md-text-button class="add-cancel" type="button">Cancel</md-text-button>
-      <md-filled-button class="add-submit" type="submit" form="add-form">Create</md-filled-button>
-    </div>
-  `;
-  document.body.append(dialog);
-  const form = dialog.querySelector("form");
-  const error = dialog.querySelector(".add-error");
-  const submit = dialog.querySelector(".add-submit");
-  const close = () => dialog.close();
-  dialog.querySelector(".add-cancel").addEventListener("click", close);
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const repository = dialog.querySelector("#add-repo").value;
-    const title = dialog.querySelector("#add-title-input").value.trim();
-    if (!repository || !title) return;
-    submit.disabled = true;
-    submit.textContent = "Creating…";
-    error.hidden = true;
-    try {
-      const created = await githubRequest(
-        `${API_ROOT}/repos/${encodeURIComponent(ORGANIZATION)}/${encodeURIComponent(repository)}/issues`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title })
-        },
-        accessToken
-      );
-      issues.unshift(created);
-      renderBoard();
-      summary.textContent = summaryText();
-      dialog.close();
-      openPanel(created);
-    } catch (requestError) {
-      error.textContent = `Could not create the issue: ${apiErrorMessage(requestError)}`;
-      error.hidden = false;
-    } finally {
-      submit.disabled = false;
-      submit.textContent = "Create";
-    }
-  });
-  addDialog = dialog;
-  return dialog;
-}
-
 function repoOptionHtml(name) {
   return `<md-select-option value="${escapeHtml(name)}" ${name === "roadmap" ? "selected" : ""}><div slot="headline">${escapeHtml(name)}</div></md-select-option>`;
 }
 
-async function openAddDialog() {
-  if (!accessToken) {
-    openAuthDialog();
-    return;
-  }
-  const dialog = ensureAddDialog();
-  const select = dialog.querySelector("#add-repo");
-  dialog.querySelector("#add-title-input").value = "";
-  dialog.querySelector(".add-error").hidden = true;
-  select.innerHTML = repoOptionHtml("roadmap");
-  dialog.show();
-  dialog.querySelector("#add-title-input").focus();
-  const names = await loadOrganizationRepos();
-  select.innerHTML = names.map(repoOptionHtml).join("");
-}
-
-if (addButton) addButton.addEventListener("click", openAddDialog);
+if (addButton) addButton.addEventListener("click", openNewIssuePanel);
 
 if (document.body.dataset.page === "detail") {
   const title = document.querySelector("#page-title");
