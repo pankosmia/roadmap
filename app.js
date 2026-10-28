@@ -863,6 +863,7 @@ function ensurePanel() {
   panelElements.repoSelect.addEventListener("change", onDraftRepoChange);
   panelElements.title.addEventListener("input", () => {
     panelElements.title.error = false;
+    clearResolvedValidationError();
   });
   panelElements.save.addEventListener("click", saveTitleAndDescription);
   setupPanelResizer(panel, panelElements.resizer);
@@ -1102,6 +1103,15 @@ function showPanelError(message) {
   if (!panelElements) return;
   panelElements.error.textContent = message;
   panelElements.error.hidden = false;
+  delete panelElements.error.dataset.validation;
+}
+
+function clearResolvedValidationError() {
+  const { error, title } = panelElements;
+  if (error.dataset.validation && !title.error && panelErrors.size === 0) {
+    error.hidden = true;
+    delete error.dataset.validation;
+  }
 }
 
 function isGroupMissing(issue, prefix) {
@@ -1119,6 +1129,7 @@ function validateDraft(draft, title) {
   renderPanelControls();
   if (title && panelErrors.size === 0) return true;
   showPanelError("Complete the highlighted fields before creating the issue.");
+  panelElements.error.dataset.validation = "true";
   if (!title) panelElements.title.focus();
   else panelElements.controls.querySelector(".has-error .connected-button")?.focus();
   return false;
@@ -1391,6 +1402,7 @@ function bindPanelControls(issue) {
       else if (!selected) labels = [...withoutPrefix(prefix), name];
       else if (mode === "clearable") labels = names.filter((item) => item !== name);
       panelErrors.delete(prefix);
+      clearResolvedValidationError();
       if (labels) patchIssue(issue, { labels });
       else renderPanelControls();
     });
