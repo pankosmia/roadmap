@@ -165,6 +165,7 @@ async function loadIssues({ force = false } = {}) {
   isLoading = true;
   refreshButton.disabled = true;
   notice.hidden = true;
+  loadOpenPulls();
 
   // Show cached issues at once; only refetch when they are stale or a refresh is forced.
   const cached = force ? null : readIssuesCache();
@@ -178,7 +179,6 @@ async function loadIssues({ force = false } = {}) {
       isLoading = false;
       refreshButton.disabled = false;
       loadPullRequests();
-      loadOpenPulls();
       return;
     }
   } else {
@@ -209,7 +209,6 @@ async function loadIssues({ force = false } = {}) {
     refreshPanel();
     summary.textContent = summaryText();
     loadPullRequests({ force: true });
-    loadOpenPulls();
     if (totalCount > 1000) {
       showNotice(`GitHub search can return at most 1,000 results. Showing the first 1,000 of ${totalCount} issues.`);
     } else {
@@ -1038,6 +1037,7 @@ async function connectToken(event) {
     closeAuthDialog();
     renderBoard();
     refreshPanel();
+    loadOpenPulls({ force: true });
     if (loadFailed) loadIssues({ force: true });
     else loadPullRequests({ force: true });
   } catch (error) {

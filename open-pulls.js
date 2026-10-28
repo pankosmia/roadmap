@@ -59,6 +59,7 @@ let openPulls = readOpenPullsCache() || { time: 0, items: [], total: 0 };
 let openPullsRun = 0;
 let openPullsDialog = null;
 let openPullsLoading = false;
+let openPullsVisible = false;
 let openPullsError = "";
 let alertsOnly = false;
 
@@ -129,7 +130,11 @@ async function fetchOpenPulls(run) {
 
 async function loadOpenPulls({ force = false } = {}) {
   if (!accessToken || openPullsLoading) return;
-  if (!force && Date.now() - openPulls.time < OPEN_PULLS_TTL) return;
+  if (!force && Date.now() - openPulls.time < OPEN_PULLS_TTL) {
+    // The cached list is fresh: show its alerts without fetching.
+    renderOpenPulls();
+    return;
+  }
   const run = ++openPullsRun;
   openPullsLoading = true;
   openPullsError = "";
@@ -218,6 +223,9 @@ function ensureOpenPullsDialog() {
     </div>
   `;
   document.body.append(openPullsDialog);
+  openPullsDialog.addEventListener("closed", () => {
+    openPullsVisible = false;
+  });
   openPullsDialog.querySelector(".pulls-alert-filter").addEventListener("click", (event) => {
     alertsOnly = event.currentTarget.selected;
     renderOpenPulls();
@@ -229,7 +237,8 @@ function ensureOpenPullsDialog() {
 
 function renderOpenPulls() {
   updatePullsBadge();
-  if (!openPullsDialog || !openPullsDialog.open) return;
+  // md-dialog sets "open" asynchronously after show(), so the visibility is tracked separately.
+  if (!openPullsDialog || !openPullsVisible) return;
   const summaryElement = openPullsDialog.querySelector(".pulls-summary");
   const list = openPullsDialog.querySelector(".pulls-list");
   const refresh = openPullsDialog.querySelector(".pulls-refresh");
@@ -272,6 +281,7 @@ function renderOpenPulls() {
 
 function openOpenPullsDialog() {
   const dialog = ensureOpenPullsDialog();
+  openPullsVisible = true;
   dialog.show();
   renderOpenPulls();
   loadOpenPulls();
