@@ -23,6 +23,7 @@
     <script type="importmap">{"imports":{"@material/web/":"https://esm.run/@material/web@2.5.0/"}}</script>
     <script src="markdown-editor.js" defer></script>
     <script src="development.js" defer></script>
+    <script src="open-pulls.js" defer></script>
     <script src="panel-settings.js" defer></script>
     <script src="filters.js" defer></script>
     <script src="app.js" defer></script>
@@ -57,6 +58,7 @@
         </div>
         <div class="heading-actions">
           <md-outlined-button id="done-button" type="button"><md-icon slot="icon">archive</md-icon>Done</md-outlined-button>
+          <md-outlined-button id="pulls-button" type="button"><md-icon slot="icon">merge_type</md-icon>Pull requests<span id="pulls-badge" class="pulls-badge" hidden></span></md-outlined-button>
         </div>
       </section>
 
