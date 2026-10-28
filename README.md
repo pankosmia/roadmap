@@ -17,14 +17,16 @@ Clicking an issue opens it in a right-anchored side panel (it does not open
 GitHub). Once connected, the panel lets you:
 
 - edit the title and description (with a Save button);
-- change Version, Flow and Blocked (one menu chip each in the Workflow area;
-  changing Version moves the card, and Flow defaults to `Flow : No Spec` when
-  leaving Unassigned without one);
-- toggle the Epic and WIP meta labels, and pick Type (exclusive), Stack
-  (multiple choices) and Priority (optional, Tweak / Urgent / Security, click
-  again to clear) in single-row connected button groups;
 - add or remove assignees from a GitHub-style popover (search, checkmarks,
-  selected users first), opened by the Assignees heading;
+  selected users first), opened by the Assignees heading (shown above Workflow);
+- change Version, Flow and Blocked (one menu chip each in the Workflow area,
+  on one row that wraps to a second line when narrow; changing Version moves
+  the card, and Flow defaults to `Flow : No Spec` when leaving Unassigned
+  without one);
+- toggle the Epic and WIP meta labels, and pick Type (exclusive: Feature, Bug,
+  Tech Debt), Stack (multiple choices: Client, Server, Data, Build,
+  Documentation) and Priority (optional, Tweak / Urgent / Security, click
+  again to clear) in single-row connected button groups;
 - see the linked pull requests and branches (Development, read-only);
 - manage Parent, Sub-issues, Blocked by and Blocking relationships, searching
   issues across the whole organization, from the Relationships heading.
@@ -33,7 +35,9 @@ Type and Stack are always marked with `*`, and their last selected choice cannot
 be deselected. Existing issues without these labels are left as they are. When
 creating an issue, they are mandatory (no default): pressing **Create** with a
 missing title, Type or Stack turns the field red and focuses the first one, and
-the message goes away once everything is filled in. Relationships chosen for a
+the message goes away once everything is filled in. The Repository field is a
+searchable popover like Assignees, with the search box focused on open.
+Relationships chosen for a
 new issue are applied right after it is created.
 
 On an existing issue, labels, assignees and relationships change instantly on
@@ -41,6 +45,8 @@ screen and are saved in the background: label and assignee changes wait 600 ms
 without another click, so quick clicks are sent as one request. A failed save
 restores what GitHub has and shows an error. Closing the panel sends pending
 changes at once. The title and description still use **Save**.
+
+Menus open and close without animation.
 
 The Settings column is 440px wide and sits next to the description from a 940px
 panel width.

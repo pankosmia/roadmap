@@ -333,16 +333,18 @@ function relationshipsSectionHtml(issue, disabled) {
   return sectionHtml("Relationships", { key: "relationships", disabled: locked }, body);
 }
 
+function togglePicker(key) {
+  if (picker && picker.anchorKey === key) {
+    closePicker();
+    return;
+  }
+  const configs = { assignees: assigneePickerConfig, relationships: relationKindPickerConfig, repository: repositoryPickerConfig };
+  openPicker(configs[key]());
+}
+
 function bindSettingsSections(controls, issue) {
   controls.querySelectorAll("[data-picker]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const key = button.dataset.picker;
-      if (picker && picker.anchorKey === key) {
-        closePicker();
-        return;
-      }
-      openPicker(key === "assignees" ? assigneePickerConfig() : relationKindPickerConfig());
-    });
+    button.addEventListener("click", () => togglePicker(button.dataset.picker));
   });
   controls.querySelector(".assign-self")?.addEventListener("click", () => {
     const own = (panelMeta.assignees || []).find((user) => user.login === currentLogin);
@@ -365,7 +367,7 @@ function bindSettingsSections(controls, issue) {
 // onSelect may return "close" or a new config to replace the current popover.
 
 function pickerAnchor() {
-  return picker && panelElements.controls.querySelector(`[data-picker="${picker.anchorKey}"]`);
+  return picker && panelElements.panel.querySelector(`[data-picker="${picker.anchorKey}"]`);
 }
 
 function openPicker(config) {
@@ -432,7 +434,11 @@ function openPicker(config) {
 
   positionPicker();
   refreshPicker(true);
-  customElements.whenDefined("md-outlined-text-field").then(() => (state.search || element.querySelector("md-list-item"))?.focus());
+  customElements.whenDefined("md-outlined-text-field").then(async () => {
+    // The input only exists once the text field has rendered.
+    await state.search?.updateComplete;
+    if (picker === state) (state.search || element.querySelector("md-list-item"))?.focus();
+  });
 }
 
 function positionPicker() {
@@ -444,8 +450,9 @@ function positionPicker() {
   const below = window.innerHeight - rect.bottom - 12;
   const above = rect.top - 12;
   const openAbove = below < 280 && above > below;
+  const left = picker.config.align === "start" ? rect.left : rect.right - width;
   element.style.width = `${width}px`;
-  element.style.left = `${Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))}px`;
+  element.style.left = `${Math.max(8, Math.min(left, window.innerWidth - width - 8))}px`;
   element.style.top = openAbove ? "auto" : `${rect.bottom + 4}px`;
   element.style.bottom = openAbove ? `${window.innerHeight - rect.top + 4}px` : "auto";
   element.style.maxHeight = `${Math.min(480, openAbove ? above : below)}px`;
@@ -514,6 +521,24 @@ async function refreshPicker(reload) {
       renderPickerList();
     }, PICKER_SEARCH_DELAY);
   }
+}
+
+function repositoryPickerConfig() {
+  return {
+    anchorKey: "repository",
+    align: "start",
+    title: "Repository",
+    placeholder: "Search repositories",
+    load: (query) => {
+      const needle = query.toLowerCase();
+      return draftRepoNames.filter((name) => name.toLowerCase().includes(needle)).map((name) => ({ key: name, headline: name, icon: "folder" }));
+    },
+    isSelected: (item) => currentIssue()?.draft && repoOf(currentIssue())[1] === item.key,
+    onSelect: (item) => {
+      chooseDraftRepo(item.key);
+      return "close";
+    }
+  };
 }
 
 function assigneePickerConfig() {
