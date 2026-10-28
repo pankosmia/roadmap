@@ -81,6 +81,24 @@ differ from the view that was active before they were touched: the default view,
 or the saved view that was applied. Filters and views are stored in the browser's
 local storage (`roadmap-filters`) and shared by all pages.
 
+The **Pull requests** button, to the right of **Done** (main and version pages),
+opens a dialog listing every open pull request of the organization (`open-pulls.js`,
+one paginated GraphQL search, loaded with the board and cached for 5 minutes,
+**Refresh** to reload; needs a connected token). Each row shows the state icon,
+title, repository, number, author and age, and links to the pull request. Pull
+requests linked to an issue in their Development area have a colored edge and a
+chip linking to each issue; orphan pull requests have a "No issue" chip.
+
+Pull requests can raise an alert, shown as a red chip on the row, an **Alerts
+only** filter in the dialog, and a red count badge on the button (hidden at 0).
+Hours are calendar hours (thresholds are constants in `open-pulls.js`):
+
+- **Draft**: a draft for 30 days or more, counted from its last "convert to draft"
+  event, or from its creation;
+- **Waiting for review**: a non-draft pull request with a pending review request
+  (or no review at all) for 48 hours or more, counted from the last review request or
+  "ready for review" event, or from its creation.
+
 On cards and in the Done dialog, the linked pull request count is a filled badge
 in the color of the pull request state.
 
