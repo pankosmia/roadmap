@@ -605,10 +605,54 @@ md-dialog form {
   gap: 16px;
 }
 
-md-outlined-text-field,
-md-outlined-select {
+md-outlined-text-field {
   display: flex;
   width: 100%;
+}
+
+/* Looks like an outlined select; opens the same searchable popover as the Assignees menu. */
+.panel-repo-field {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "label icon"
+    "value icon";
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 6px 12px 6px 16px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-xs, 4px);
+  background: transparent;
+  color: var(--md-sys-color-on-surface);
+  font: var(--md-type-body-large);
+  text-align: left;
+  cursor: pointer;
+}
+
+.panel-repo-field[hidden] {
+  display: none;
+}
+
+.panel-repo-field:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.repo-field-label {
+  grid-area: label;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-type-body-small);
+}
+
+.repo-field-value {
+  grid-area: value;
+}
+
+.panel-repo-field md-icon {
+  grid-area: icon;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .dialog-copy,
@@ -1011,6 +1055,16 @@ md-outlined-select {
   padding: 16px;
   border-radius: var(--md-sys-shape-md);
   background: var(--md-sys-color-surface-container-high);
+}
+
+.workflow-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+}
+
+.workflow-chips .control {
+  margin-bottom: 0;
 }
 
 .control {

@@ -1,5 +1,6 @@
 const ORGANIZATION = "pankosmia";
 const API_ROOT = "https://api.github.com";
+const DEFAULT_REPOSITORY = "roadmap";
 const PAGE_SIZE = 100;
 const VERSIONS = ["Unassigned", "Backlog", "Next", "Current"];
 const VERSION_LABELS = new Map(VERSIONS.map((version) => [version, `Version : ${version}`]));
@@ -458,6 +459,7 @@ let moveMenuItems = [];
 function createMoveMenu() {
   moveMenu = document.createElement("md-menu");
   moveMenu.setAttribute("positioning", "popover");
+  moveMenu.quick = true;
   moveMenuItems = COLUMNS.map((column) => {
     const item = document.createElement("md-menu-item");
     item.dataset.column = column;
@@ -702,7 +704,12 @@ function disconnectToken() {
 }
 
 const META_LABELS = ["Epic", "WIP"];
-const PRIORITY_ORDER = ["Tweak", "Urgent", "Security"];
+// Button group order; labels that are not listed come last, in GitHub's order.
+const GROUP_ORDER = {
+  Type: ["Feature", "Bug", "Tech Debt"],
+  Stack: ["Client", "Server", "Data", "Build", "Documentation"],
+  Priority: ["Tweak", "Urgent", "Security"]
+};
 const REQUIRED_GROUPS = [
   { prefix: "Type", message: "Select a type." },
   { prefix: "Stack", message: "Select at least one stack." }
@@ -755,7 +762,7 @@ function repoOf(issue) {
 const DRAFT_ID = "new-issue";
 let draftIssue = null;
 
-function newDraftIssue(repository = "roadmap") {
+function newDraftIssue(repository = DEFAULT_REPOSITORY) {
   return {
     id: DRAFT_ID,
     draft: true,
@@ -826,7 +833,12 @@ function ensurePanel() {
       <div class="panel-main">
         <p class="panel-error auth-error" role="alert" hidden></p>
         <p class="panel-readonly"><md-icon>lock</md-icon>Connect GitHub to edit this issue.</p>
-        <md-outlined-select class="panel-repo-select" label="Repository" hidden></md-outlined-select>
+        <button type="button" class="panel-repo-field" data-picker="repository" aria-haspopup="dialog" hidden>
+          <md-ripple></md-ripple><md-focus-ring></md-focus-ring>
+          <span class="repo-field-label">Repository</span>
+          <span class="repo-field-value"></span>
+          <md-icon>arrow_drop_down</md-icon>
+        </button>
         <md-outlined-text-field class="panel-title-input" label="Title" type="text" autocomplete="off"></md-outlined-text-field>
         <div class="panel-save-row">
           <md-filled-button class="panel-save" type="button">Save</md-filled-button>
@@ -853,14 +865,14 @@ function ensurePanel() {
     error: panel.querySelector(".panel-error"),
     readonly: panel.querySelector(".panel-readonly"),
     title: panel.querySelector(".panel-title-input"),
-    repoSelect: panel.querySelector(".panel-repo-select"),
+    repoField: panel.querySelector(".panel-repo-field"),
     resizer: panel.querySelector(".panel-resizer"),
     save: panel.querySelector(".panel-save"),
     controls: panel.querySelector(".panel-controls")
   };
   overlay.addEventListener("click", requestClosePanel);
   panel.querySelector(".panel-close").addEventListener("click", requestClosePanel);
-  panelElements.repoSelect.addEventListener("change", onDraftRepoChange);
+  panelElements.repoField.addEventListener("click", () => togglePicker("repository"));
   panelElements.title.addEventListener("input", () => {
     panelElements.title.error = false;
     clearResolvedValidationError();
@@ -975,30 +987,30 @@ function openPanel(issue) {
   loadPanelMeta(issue);
 }
 
+let draftRepoNames = [DEFAULT_REPOSITORY];
+
 async function openNewIssuePanel() {
   if (!accessToken) {
     openAuthDialog();
     return;
   }
   draftIssue = newDraftIssue();
-  const select = ensurePanel().repoSelect;
-  select.innerHTML = repoOptionHtml("roadmap");
+  draftRepoNames = [DEFAULT_REPOSITORY];
   openPanel(draftIssue);
   const names = await loadOrganizationRepos();
   if (panelIssueId !== DRAFT_ID) return;
-  const selected = select.value;
-  select.innerHTML = names.map(repoOptionHtml).join("");
-  select.value = selected;
+  draftRepoNames = names;
+  if (picker?.anchorKey === "repository") refreshPicker(true);
 }
 
-function onDraftRepoChange() {
-  if (panelIssueId !== DRAFT_ID) return;
-  draftIssue.repository_url = `${API_ROOT}/repos/${ORGANIZATION}/${panelElements.repoSelect.value}`;
+function chooseDraftRepo(name) {
+  if (panelIssueId !== DRAFT_ID || repoOf(draftIssue)[1] === name) return;
+  draftIssue.repository_url = `${API_ROOT}/repos/${ORGANIZATION}/${name}`;
   draftIssue.labels = [];
   draftIssue.assignees = [];
   panelMeta = { labels: null, assignees: null };
   panelErrors = new Set();
-  closePicker(false);
+  if (picker?.anchorKey !== "repository") closePicker(false);
   refreshPanel();
   loadPanelMeta(draftIssue);
 }
@@ -1094,8 +1106,9 @@ function refreshPanel() {
   panelElements.ref.textContent = issue.draft ? "New issue" : `${owner}/${repository} #${issue.number}`;
   panelElements.link.hidden = Boolean(issue.draft);
   if (!issue.draft) panelElements.link.href = issue.html_url;
-  panelElements.repoSelect.hidden = !issue.draft;
-  panelElements.repoSelect.disabled = panelBusy;
+  panelElements.repoField.hidden = !issue.draft;
+  panelElements.repoField.disabled = !accessToken;
+  panelElements.repoField.querySelector(".repo-field-value").textContent = repository;
   panelElements.save.textContent = issue.draft ? "Create" : "Save";
   panelElements.readonly.hidden = Boolean(accessToken);
   panelElements.title.disabled = !accessToken;
@@ -1376,10 +1389,11 @@ function panelFlow(issue) {
 
 function orderedGroupOptions(issue, prefix) {
   const options = groupOptions(issue, prefix);
-  if (prefix !== "Priority") return options;
+  const order = GROUP_ORDER[prefix];
+  if (!order) return options;
   const rank = (name) => {
-    const index = PRIORITY_ORDER.indexOf(labelValue(name));
-    return index === -1 ? PRIORITY_ORDER.length : index;
+    const index = order.indexOf(labelValue(name));
+    return index === -1 ? order.length : index;
   };
   return options.sort((a, b) => rank(a) - rank(b));
 }
@@ -1408,7 +1422,7 @@ function renderPanelControls() {
         <md-assist-chip id="chip-${id}" class="menu-chip-button" aria-label="${label}: ${escapeHtml(shown)}" aria-haspopup="menu" data-menu="${id}" ${disabled}>
           <span class="chip-content"><span>${escapeHtml(shown)}</span><md-icon>arrow_drop_down</md-icon></span>
         </md-assist-chip>
-        <md-menu id="menu-${id}" anchor="chip-${id}" positioning="popover" aria-label="${label}">
+        <md-menu id="menu-${id}" anchor="chip-${id}" positioning="popover" quick aria-label="${label}">
           ${items.map(({ value, text }) => `<md-menu-item data-chip="${id}" data-value="${escapeHtml(value)}" ${value === current ? "selected" : ""}><div slot="headline">${escapeHtml(text)}</div></md-menu-item>`).join("")}
         </md-menu>
       </div>`}
@@ -1449,11 +1463,14 @@ function renderPanelControls() {
 
   panelElements.controls.disabled = locked;
   panelElements.controls.innerHTML = `
+    ${assigneesSectionHtml(issue, disabled)}
     <section class="workflow-section">
       <h3>Workflow</h3>
-      ${menuChip("version", "Version", VERSIONS.map((item) => ({ value: item, text: item })), version, { warning: versionWarning })}
-      ${menuChip("flow", "Flow", FLOWS.map((item) => ({ value: item, text: item })), flow, { warning: flowWarning })}
-      ${menuChip("blocked", "Blocked", blockedOptions, blockedCurrent, { noneText: "None" })}
+      <div class="workflow-chips">
+        ${menuChip("version", "Version", VERSIONS.map((item) => ({ value: item, text: item })), version, { warning: versionWarning })}
+        ${menuChip("flow", "Flow", FLOWS.map((item) => ({ value: item, text: item })), flow, { warning: flowWarning })}
+        ${menuChip("blocked", "Blocked", blockedOptions, blockedCurrent, { noneText: "None" })}
+      </div>
     </section>
     <section class="other-section">
       <h3>Labels</h3>
@@ -1462,7 +1479,6 @@ function renderPanelControls() {
       ${buttonGroup("Stack", "multi", true)}
       ${buttonGroup("Priority", "clearable")}
     </section>
-    ${assigneesSectionHtml(issue, disabled)}
     ${developmentSectionHtml(issue)}
     ${relationshipsSectionHtml(issue, disabled)}
   `;
@@ -1549,10 +1565,6 @@ async function loadOrganizationRepos() {
     // Fall back to the repositories seen on the board.
   }
   return [...names].sort((a, b) => a.localeCompare(b));
-}
-
-function repoOptionHtml(name) {
-  return `<md-select-option value="${escapeHtml(name)}" ${name === "roadmap" ? "selected" : ""}><div slot="headline">${escapeHtml(name)}</div></md-select-option>`;
 }
 
 if (addButton) addButton.addEventListener("click", openNewIssuePanel);
