@@ -131,7 +131,10 @@ async function loadPullRequests({ force = false } = {}) {
   await Promise.all(Array.from({ length: Math.min(PULL_BATCH_PARALLEL, batches.length) }, worker));
   if (run !== pullsRun) return;
   saveIssuesCache();
-  if (failure) showNotice(`Linked pull requests could not be loaded: ${apiErrorMessage(failure)}`, true);
+  // Only the issues that still have no pull request data are requested again.
+  if (failure) {
+    showNotice(`Linked pull requests could not be loaded: ${apiErrorMessage(failure)}`, true, { label: "Retry", onClick: () => loadPullRequests() });
+  }
 }
 
 function closeDevelopmentPopover(restoreFocus = true) {
