@@ -80,6 +80,31 @@ without another click, so quick clicks are sent as one request. A failed save
 restores what GitHub has and shows an error. Closing the panel sends pending
 changes at once. The title and description still use **Save**.
 
+**Timeline** (`timeline.js`): below the description, the panel shows the life of the
+issue as on GitHub, from the REST timeline endpoint (readable without a token). It
+lists the opening, comments (rendered Markdown, author badge, "edited" marker,
+collapsed minimized comments), reviews, commits, and events such as labels,
+assignees, renames, state changes, milestones, references, cross-references,
+parent and sub-issues, blocking relationships and pull request activity. Label and
+assignee events by the same person within 10 minutes become one row, and a run of
+Project board events is a single "Dashboard workflow actions were performed (N
+changes)" row, collapsed by default with a chevron. A run of 7 or more consecutive
+activity rows folds into "N activity items hidden"; comments, closed/reopened
+events and the 3 most recent activity rows are never folded, and an expanded fold
+stays open until the panel closes. **Show all activity** disables folding, and the
+**All / Comments / Activity** chips filter the list. The newest 100 items load
+first (until 20 items are shown), and **Load older items** fetches the rest.
+The arrow button switches between oldest first (composer at the end) and newest
+first (composer on top); the choice is stored in `localStorage`
+(`roadmap-timeline-order`) and applies to every panel and to the other tabs.
+With a token you can write comments in a Markdown editor (**Close with comment** /
+**Reopen with comment** post the comment, then change the state), quote or copy the
+link of a comment, add and remove reactions, and edit or delete your own comments
+(repository admins can delete any comment). A draft comment or an open comment edit
+counts as unsaved changes when the panel closes. The timeline follows the board's
+live updates (see above) and refreshes after the panel's own saves; without a token
+it is read-only.
+
 Menus open and close without animation.
 
 The Settings column is 440px wide and sits next to the description from a 940px

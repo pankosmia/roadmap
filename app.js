@@ -117,7 +117,8 @@ async function fetchWithRetry(url, options) {
   }
 }
 
-async function githubRequest(url, options = {}, token = "") {
+// Returns the parsed body together with the response, for callers that need its status or headers (e.g. Link).
+async function githubRequestWithResponse(url, options = {}, token = "") {
   const response = await fetchWithRetry(url, {
     ...options,
     headers: { ...requestHeaders(token), ...options.headers }
@@ -143,7 +144,11 @@ async function githubRequest(url, options = {}, token = "") {
     else if (reset > 0) failure.retryAt = reset * 1000;
     throw failure;
   }
-  return response.status === 204 ? null : response.json();
+  return { data: response.status === 204 ? null : await response.json(), response };
+}
+
+async function githubRequest(url, options = {}, token = "") {
+  return (await githubRequestWithResponse(url, options, token)).data;
 }
 
 function apiErrorMessage(error) {
@@ -804,6 +809,7 @@ async function changeIssueState(issue, body, { duplicateOf = null, undoLabels = 
     saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
+    refreshTimelineSoon();
     if (undoLabels) {
       const message = isArchived(merged) ? `Closed #${merged.number} and moved to the archives.` : `Closed #${merged.number}.`;
       showUndo(message, () => undoClose(merged, undoLabels, commentId));
@@ -1371,6 +1377,7 @@ function ensurePanel() {
     onSubmit: saveTitleAndDescription
   });
   panel.querySelector(".panel-save-row").before(descriptionEditor.element);
+  createTimeline(panel.querySelector(".panel-main"));
   document.body.append(overlay, panel);
   panelElements = {
     overlay,
@@ -1495,6 +1502,7 @@ function openPanel(issue) {
   panelMeta = { labels: null, assignees: null };
   panelErrors = new Set();
   resetPanelExtras();
+  resetTimeline();
   closePicker(false);
   elements.title.error = false;
   elements.title.value = issue.title;
@@ -1573,7 +1581,7 @@ function hasUnsavedChanges() {
   const title = panelElements.title.value.trim();
   const body = descriptionEditor.value;
   if (issue.draft) return Boolean(title || body.trim() || issue.labels.length || issue.assignees.length || relationCount(issue.relationships));
-  return title !== issue.title || body !== (issue.body || "");
+  return title !== issue.title || body !== (issue.body || "") || timelineHasUnsavedChanges();
 }
 
 let discardDialog = null;
@@ -1639,6 +1647,7 @@ function refreshPanel() {
   panelElements.save.disabled = !accessToken;
   renderStatusControls(issue);
   renderPanelControls();
+  ensureTimeline(issue);
 }
 
 function showPanelError(message) {
@@ -1844,6 +1853,7 @@ async function runIssueSave(issue) {
     );
     save.confirmed = { labels: updated.labels, assignees: updated.assignees };
     mergeUpdatedIssue(issue, updated);
+    refreshTimelineSoon();
   } catch (error) {
     // Go back to what GitHub has, and drop the changes made since.
     clearTimeout(save.timer);
@@ -1908,6 +1918,7 @@ async function patchIssueNow(issue, body) {
     saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
+    refreshTimelineSoon();
     return merged;
   } catch (error) {
     showPanelError(`Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`);

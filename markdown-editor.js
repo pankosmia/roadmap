@@ -24,12 +24,12 @@ function lineEnd(text, position) {
   return end === -1 ? text.length : end;
 }
 
-function createMarkdownEditor({ renderPreview, onSubmit }) {
+function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, label = "Description", placeholder = "Leave a description" }) {
   const element = document.createElement("div");
   element.className = "md-editor";
   element.innerHTML = `
     <div class="md-editor-bar">
-      <md-tabs class="md-editor-tabs" aria-label="Description mode">
+      <md-tabs class="md-editor-tabs">
         <md-primary-tab class="md-tab-write">Write</md-primary-tab>
         <md-primary-tab class="md-tab-preview">Preview</md-primary-tab>
       </md-tabs>
@@ -38,13 +38,16 @@ function createMarkdownEditor({ renderPreview, onSubmit }) {
           <md-icon-button data-action="${action.name}" aria-label="${action.label}" title="${action.label}"><md-icon>${action.icon}</md-icon></md-icon-button>`).join("")}
       </div>
     </div>
-    <textarea class="md-editor-input" aria-label="Description" placeholder="Leave a description" spellcheck="true"></textarea>
+    <textarea class="md-editor-input" spellcheck="true"></textarea>
     <div class="md-editor-preview markdown-body" hidden></div>
   `;
   const tabs = element.querySelector(".md-editor-tabs");
   const toolbar = element.querySelector(".md-editor-toolbar");
   const input = element.querySelector(".md-editor-input");
   const preview = element.querySelector(".md-editor-preview");
+  input.setAttribute("aria-label", label);
+  input.placeholder = placeholder;
+  tabs.setAttribute("aria-label", `${label} mode`);
   let previewRequest = 0;
   let previewing = false;
   let disabled = false;
@@ -221,6 +224,8 @@ function createMarkdownEditor({ renderPreview, onSubmit }) {
     else previewRequest += 1;
   }
 
+  input.addEventListener("input", () => onInput?.());
+
   tabs.addEventListener("change", () => {
     const wantsPreview = tabs.activeTabIndex === 1;
     if (wantsPreview !== previewing) setPreviewing(wantsPreview);
@@ -234,6 +239,7 @@ function createMarkdownEditor({ renderPreview, onSubmit }) {
     set value(text) {
       input.value = text;
       if (previewing) showPreview();
+      onInput?.();
     },
     set disabled(value) {
       disabled = value;
@@ -241,6 +247,11 @@ function createMarkdownEditor({ renderPreview, onSubmit }) {
       toolbar.querySelectorAll("md-icon-button").forEach((button) => {
         button.disabled = value;
       });
+    },
+    focus() {
+      if (previewing) setPreviewing(false);
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
     },
     showWrite() {
       if (previewing) setPreviewing(false);

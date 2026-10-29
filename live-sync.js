@@ -242,6 +242,7 @@ function syncOpenPanel(state, changes) {
   // Makes the panel load the relationships and the development of the issue again.
   panelExtras.key = "";
   refreshPanel();
+  refreshTimeline();
 }
 
 function rootIssue(issue) {
