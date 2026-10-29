@@ -54,6 +54,7 @@ function relationItem(raw) {
     number: raw.number,
     title: raw.title,
     state: raw.state,
+    state_reason: raw.state_reason,
     repo: raw.repository_url.split("/").slice(-2).join("/"),
     url: raw.html_url
   };
@@ -287,10 +288,9 @@ function developmentSectionHtml(issue) {
 }
 
 function relationRowHtml(kind, item, disabled) {
-  const closed = item.state === "closed";
   return `
     <li class="relation-row">
-      <md-icon class="${closed ? "state-merged" : "state-open"}" title="${closed ? "Closed" : "Open"}">${closed ? "check_circle" : "adjust"}</md-icon>
+      ${statusIconHtml(item)}
       <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener"><span class="relation-title">${escapeHtml(item.title)}</span>
         <span class="relation-ref">${escapeHtml(displayRepo(item.repo))}#${item.number}</span></a>
       <md-icon-button class="relation-remove" data-remove-kind="${kind}" data-remove-id="${item.id}" aria-label="Remove ${escapeHtml(displayRepo(item.repo))}#${item.number}" ${disabled}><md-icon>close</md-icon></md-icon-button>
@@ -573,8 +573,8 @@ function relationIssuePickerConfig(kind) {
     key: String(item.id),
     headline: item.title,
     supporting: `${item.repo}#${item.number}`,
-    icon: item.state === "closed" ? "check_circle" : "adjust",
-    iconClass: item.state === "closed" ? "state-merged" : "state-open",
+    icon: issueStatus(item).icon,
+    iconClass: `status-${issueStatus(item).key}`,
     issue: item
   });
   const current = () => (kind === "parent" ? [panelExtras.relations.parent] : panelExtras.relations[kind]).filter(Boolean);
