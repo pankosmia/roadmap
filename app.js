@@ -194,6 +194,7 @@ async function loadIssues({ force = false } = {}) {
   loadOpenPulls();
 
   // Show cached issues at once; only refetch when they are stale or a refresh is forced.
+  if (force) subIssueOrders.clear();
   const cached = force ? null : readIssuesCache();
   if (cached) {
     issues = cached.issues;
@@ -329,6 +330,16 @@ function subIssuesOf(parent) {
   return issues.filter((issue) => issue.parent_issue_url === parent.url);
 }
 
+function descendantsOf(parent, seen = new Set([parent.id])) {
+  const result = [];
+  for (const child of subIssuesOf(parent)) {
+    if (seen.has(child.id)) continue;
+    seen.add(child.id);
+    result.push(child, ...descendantsOf(child, seen));
+  }
+  return result;
+}
+
 function isNestedSubIssue(issue) {
   return Boolean(issue.parent_issue_url) && issues.some((item) => item.url === issue.parent_issue_url && isOnBoard(item));
 }
@@ -339,7 +350,7 @@ function matchesText(issue) {
 
 function matchesSearch(issue) {
   if (!searchTerm) return true;
-  return matchesText(issue) || subIssuesOf(issue).some(matchesText);
+  return matchesText(issue) || descendantsOf(issue).some(matchesText);
 }
 
 const labelColors = new Map();
@@ -367,13 +378,12 @@ async function loadColumnLabelColors() {
 }
 
 function renderBoard() {
-  closeMoveMenu();
   board.replaceChildren();
   refreshFilterOptions();
   const topLevelIssues = issues.filter((issue) => isOnBoard(issue) && !isNestedSubIssue(issue) && matchesSearch(issue) && passesFilters(issue));
   const visibleIssues = detailVersion ? topLevelIssues.filter((issue) => issueVersion(issue) === detailVersion) : topLevelIssues;
   for (const version of COLUMNS) {
-    const columnIssues = visibleIssues.filter((issue) => issueColumn(issue) === version);
+    const columnIssues = visibleIssues.filter((issue) => issueColumn(issue) === version).sort(byLastUpdated);
     const column = document.createElement("section");
     column.className = "column";
     column.dataset.version = version;
@@ -428,20 +438,58 @@ function subIssueProgress(issue) {
   return loaded > 0 ? { done: 0, total: loaded } : null;
 }
 
-function cardStats(issue) {
-  const assignees = (issue.assignees || [])
+const RELATIVE_TIME = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+const RELATIVE_UNITS = [
+  ["day", 86400],
+  ["hour", 3600],
+  ["minute", 60]
+];
+const RELATIVE_MAX_DAYS = 30;
+
+function byLastUpdated(a, b) {
+  return Date.parse(b.updated_at) - Date.parse(a.updated_at);
+}
+
+// Mirrors GitHub: relative up to 30 days ("3 days ago"), then an absolute date ("on Sep 5, 2025").
+function lastUpdatedText(isoDate) {
+  const date = new Date(isoDate);
+  const seconds = Math.round((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  if (seconds < RELATIVE_MAX_DAYS * 86400) {
+    for (const [unit, size] of RELATIVE_UNITS) {
+      if (seconds >= size) return RELATIVE_TIME.format(-Math.floor(seconds / size), unit);
+    }
+  }
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  const text = date.toLocaleDateString("en", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
+  return `on ${text}`;
+}
+
+function lastUpdatedHtml(issue) {
+  if (!issue.updated_at) return "";
+  const full = new Date(issue.updated_at).toLocaleString();
+  return `<time class="last-updated" datetime="${escapeHtml(issue.updated_at)}" title="${escapeHtml(full)}">Updated ${lastUpdatedText(issue.updated_at)}</time>`;
+}
+
+function avatarsHtml(issue, size, slot = "") {
+  const images = (issue.assignees || [])
     .slice(0, 3)
-    .map((user) => `<img class="avatar" src="${escapeHtml(user.avatar_url)}" alt="${escapeHtml(user.login)}" title="${escapeHtml(user.login)}" width="24" height="24" loading="lazy">`)
+    .map((user) => `<img class="avatar" src="${escapeHtml(user.avatar_url)}" alt="${escapeHtml(user.login)}" title="${escapeHtml(user.login)}" width="${size}" height="${size}" loading="lazy">`)
     .join("");
-  const progress = subIssueProgress(issue);
-  const parts = [];
-  if (assignees) parts.push(`<span class="avatars">${assignees}</span>`);
-  parts.push(`<span class="stat" title="Comments"><md-icon>chat_bubble</md-icon>${issue.comments || 0}</span>`);
-  if (progress) {
-    parts.push(`<span class="stat" title="Subissues completed"><md-icon>checklist</md-icon>${progress.done}/${progress.total}</span>`);
+  return images ? `<span class="avatars" ${slot ? `slot="${slot}"` : ""}>${images}</span>` : "";
+}
+
+function cardFooterHtml(issue) {
+  const parts = [avatarsHtml(issue, 24)];
+  if (issue.comments > 0) {
+    parts.push(`<span class="stat" title="Comments"><md-icon>chat_bubble</md-icon>${issue.comments}</span>`);
   }
   parts.push(developmentSlotHtml(issue));
-  return `<div class="card-stats">${parts.join("")}</div>`;
+  const stats = parts.join("");
+  return `<div class="card-footer">
+      <div class="card-stats">${stats}</div>
+      ${lastUpdatedHtml(issue)}
+    </div>`;
 }
 
 function createIssueCard(issue) {
@@ -467,91 +515,15 @@ function createIssueCard(issue) {
     </div>
     <button class="issue-title" type="button">${escapeHtml(issue.title)}</button>
     ${labels ? `<div class="issue-labels" aria-label="Issue labels">${labels}</div>` : ""}
-    ${cardStats(issue)}
-    <div class="card-footer">
-      <md-text-button class="move-button" data-issue-id="${issue.id}" trailing-icon aria-label="Move issue #${number} to ${detailVersion ? "stage" : "version"}" ${accessToken ? "" : "disabled"}>
-        Move to
-        <md-icon slot="icon">arrow_drop_down</md-icon>
-      </md-text-button>
-    </div>
+    ${cardFooterHtml(issue)}
   `;
 
-  const subIssues = subIssuesOf(issue);
-  if (subIssues.length > 0) {
-    const accordion = document.createElement("details");
-    accordion.className = "subissues";
-    const accordionSummary = document.createElement("summary");
-    const progress = subIssueProgress(issue);
-    accordionSummary.textContent = `Subissues (${progress ? `${progress.done}/${progress.total}` : subIssues.length})`;
-    accordion.append(accordionSummary);
-    for (const subIssue of subIssues) {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "subissue-link";
-      item.textContent = `#${subIssue.number} ${subIssue.title}`;
-      item.addEventListener("click", () => openPanel(subIssue));
-      accordion.append(item);
-    }
-    card.insertBefore(accordion, card.querySelector(".card-footer"));
+  if (hasSubIssues(issue)) {
+    card.insertBefore(createSubissues(issue), card.querySelector(".card-footer"));
   }
 
   card.querySelector(".issue-title").addEventListener("click", () => openPanel(issue));
-  const moveButton = card.querySelector(".move-button");
-  moveButton.addEventListener("click", () => openMoveMenu(issue, moveButton));
   return card;
-}
-
-let moveMenu = null;
-let moveMenuIssue = null;
-let moveMenuItems = [];
-
-function createMoveMenu() {
-  moveMenu = document.createElement("md-menu");
-  moveMenu.setAttribute("positioning", "popover");
-  moveMenu.quick = true;
-  moveMenuItems = COLUMNS.map((column) => {
-    const item = document.createElement("md-menu-item");
-    item.dataset.column = column;
-    item.innerHTML = `<md-icon slot="start"></md-icon><div slot="headline">${escapeHtml(column)}</div>`;
-    item.addEventListener("click", () => {
-      if (moveMenuIssue) moveIssue(moveMenuIssue, column);
-    });
-    return item;
-  });
-  moveMenu.append(...moveMenuItems);
-  document.body.append(moveMenu);
-}
-
-function openMoveMenu(issue, anchor) {
-  if (!moveMenu) createMoveMenu();
-  // Opening a menu that is closing, or re-anchoring an open one, makes it jump; close first and reopen after the close completes.
-  if (moveMenu.open) {
-    const sameAnchor = moveMenu.anchorElement === anchor;
-    moveMenu.addEventListener("closed", () => {
-      if (!sameAnchor) showMoveMenu(issue, anchor);
-    }, { once: true });
-    moveMenu.close();
-    return;
-  }
-  showMoveMenu(issue, anchor);
-}
-
-function showMoveMenu(issue, anchor) {
-  moveMenuIssue = issue;
-  const current = issueColumn(issue);
-  for (const item of moveMenuItems) {
-    const isCurrent = item.dataset.column === current;
-    item.toggleAttribute("selected", isCurrent);
-    item.querySelector("md-icon").textContent = isCurrent ? "check" : "";
-  }
-  moveMenu.anchorElement = anchor;
-  requestAnimationFrame(() => {
-    moveMenu.open = true;
-  });
-}
-
-function closeMoveMenu() {
-  if (moveMenu && moveMenu.open) moveMenu.close();
 }
 
 function onDragStart(event) {
@@ -559,6 +531,12 @@ function onDragStart(event) {
     event.preventDefault();
     return;
   }
+  const issue = issues.find((item) => item.id === Number(event.currentTarget.dataset.issueId));
+  if (!issue) {
+    event.preventDefault();
+    return;
+  }
+  beginDrag("card", issue, event.currentTarget);
   event.dataTransfer.setData("text/plain", event.currentTarget.dataset.issueId);
   event.dataTransfer.effectAllowed = "move";
   event.currentTarget.classList.add("dragging");
@@ -566,8 +544,8 @@ function onDragStart(event) {
 
 function onDragEnd(event) {
   event.currentTarget.classList.remove("dragging");
-  document.querySelectorAll(".column.drag-over").forEach((column) => column.classList.remove("drag-over"));
-  removeDropIndicator();
+  clearColumnState();
+  endDrag();
 }
 
 function removeDropIndicator() {
@@ -610,16 +588,18 @@ async function onDrop(event) {
   const issue = issues.find((item) => item.id === issueId);
   event.currentTarget.closest(".column").classList.remove("drag-over");
   removeDropIndicator();
-  if (issue && version) await moveIssue(issue, version);
+  if (issue && version) await dropOnColumn(issue, version);
 }
 
-async function moveIssue(issue, version) {
+async function moveIssue(issue, version, { restoreParent = null } = {}) {
   if (!accessToken) {
     openAuthDialog();
     return;
   }
   const previous = issueColumn(issue);
-  if (!COLUMNS.includes(version) || previous === version) return;
+  // On a version page, an issue without this page's Version label (a subissue taken out of its parent) still needs it.
+  const needsVersionLabel = Boolean(detailVersion) && issueVersion(issue) !== detailVersion;
+  if (!COLUMNS.includes(version) || (previous === version && !needsVersionLabel)) return;
 
   const [owner, repository] = issue.repository_url.split("/").slice(-2);
   let labels;
@@ -627,7 +607,8 @@ async function moveIssue(issue, version) {
   if (detailVersion) {
     labels = issue.labels
       .map((label) => label.name)
-      .filter((labelName) => !isFlowLabel(labelName));
+      .filter((labelName) => !isFlowLabel(labelName) && !(needsVersionLabel && isVersionLabel(labelName)));
+    if (needsVersionLabel) labels.push(VERSION_LABELS.get(detailVersion));
     labels.push(flowLabelName(version));
     if (version === DONE_FLOW) stateChange = { state: "closed", state_reason: "completed" };
     else if (isClosed(issue)) stateChange = { state: "open", state_reason: "reopened" };
@@ -640,9 +621,6 @@ async function moveIssue(issue, version) {
     if (DETAIL_VERSIONS.includes(version) && !hasFlow) labels.push(flowLabelName(DEFAULT_FLOW));
   }
 
-  document.querySelectorAll(`.move-button[data-issue-id="${issue.id}"]`).forEach((button) => {
-    button.disabled = true;
-  });
   notice.hidden = true;
 
   try {
@@ -661,7 +639,10 @@ async function moveIssue(issue, version) {
     renderBoard();
     summary.textContent = summaryText();
     refreshPanel();
-    showUndo(`Moved #${updated.number} to ${issueColumn(updated)}.`, () => moveIssue(updated, previous));
+    showUndo(`Moved #${updated.number} to ${issueColumn(updated)}.`, async () => {
+      await moveIssue(updated, previous);
+      if (restoreParent) await nestIssue(issues.find((item) => item.id === updated.id) || updated, parentByUrl(restoreParent));
+    });
   } catch (error) {
     showNotice(`Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`, true);
     renderBoard();
