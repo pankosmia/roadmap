@@ -41,7 +41,7 @@ function pullRowHtml(pull) {
         <li class="relation-row">
           <md-icon class="${state.className}" title="${state.text}">${state.icon}</md-icon>
           <a href="${escapeHtml(pull.url)}" target="_blank" rel="noopener"><span class="relation-title">${escapeHtml(pull.title)}</span>
-            <span class="relation-ref">${escapeHtml(pull.repo)}#${pull.number} · ${state.text}</span></a>
+            <span class="relation-ref">${escapeHtml(displayRepo(pull.repo))}#${pull.number} · ${state.text}</span></a>
         </li>`;
 }
 

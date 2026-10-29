@@ -505,7 +505,7 @@ function createIssueCard(issue) {
   card.addEventListener("dragstart", onDragStart);
   card.addEventListener("dragend", onDragEnd);
 
-  const repository = issue.repository_url.split("/").slice(-2).join("/");
+  const repository = displayRepo(repoOf(issue).join("/"));
   const number = issue.number;
   const labels = issue.labels
     .filter((label) => (detailVersion ? !isFlowLabel(label.name) : !isVersionLabel(label.name)))
@@ -953,7 +953,7 @@ function renderDuplicateResults() {
     option.className = "duplicate-option";
     option.setAttribute("role", "option");
     option.setAttribute("aria-selected", String(duplicateTarget?.id === item.id));
-    option.innerHTML = `${statusIconHtml(item)}<span class="duplicate-title">${escapeHtml(item.title)}</span><span class="duplicate-ref">${escapeHtml(repoOf(item).join("/"))}#${item.number}</span>`;
+    option.innerHTML = `${statusIconHtml(item)}<span class="duplicate-title">${escapeHtml(item.title)}</span><span class="duplicate-ref">${escapeHtml(displayRepo(repoOf(item).join("/")))}#${item.number}</span>`;
     option.addEventListener("click", () => {
       duplicateTarget = item;
       renderDuplicateResults();
@@ -1079,7 +1079,7 @@ function renderArchive() {
     const item = document.createElement("div");
     item.className = "duplicate-option done-row";
     const date = new Date(isClosed(issue) ? issue.closed_at : issue.updated_at).toLocaleDateString();
-    item.innerHTML = `<button type="button" class="done-open">${statusIconHtml(issue)}<span class="duplicate-title">${escapeHtml(issue.title)}</span><span class="duplicate-ref">${escapeHtml(repoOf(issue).join("/"))}#${issue.number} · ${date}</span></button>${developmentTriggerHtml(issue)}`;
+    item.innerHTML = `<button type="button" class="done-open">${statusIconHtml(issue)}<span class="duplicate-title">${escapeHtml(issue.title)}</span><span class="duplicate-ref">${escapeHtml(displayRepo(repoOf(issue).join("/")))}#${issue.number} · ${date}</span></button>${developmentTriggerHtml(issue)}`;
     item.querySelector(".done-open").addEventListener("click", () => {
       dialog.close();
       openPanel(issue);
@@ -1242,6 +1242,11 @@ function labelChipHtml(label) {
 
 function repoOf(issue) {
   return issue.repository_url.split("/").slice(-2);
+}
+
+// Every issue is in the organization, so its name is left out of what is displayed.
+function displayRepo(fullName) {
+  return fullName.startsWith(`${ORGANIZATION}/`) ? fullName.slice(ORGANIZATION.length + 1) : fullName;
 }
 
 const DRAFT_ID = "new-issue";
@@ -1604,7 +1609,7 @@ function refreshPanel() {
     return;
   }
   const [owner, repository] = repoOf(issue);
-  panelElements.ref.textContent = issue.draft ? "New issue" : `${owner}/${repository} #${issue.number}`;
+  panelElements.ref.textContent = issue.draft ? "New issue" : `${displayRepo(`${owner}/${repository}`)} #${issue.number}`;
   panelElements.link.hidden = Boolean(issue.draft);
   if (!issue.draft) panelElements.link.href = issue.html_url;
   panelElements.repoField.hidden = !issue.draft;

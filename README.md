@@ -76,7 +76,7 @@ appears when an expected label is missing from the repository. The **+ Add**
 button on the main page creates an issue (default repository: `roadmap`) in
 Unassigned and opens it in the side panel. Cards show their labels in their
 GitHub colors, without the text before the ":" (for example "Spec'd" for
-"Flow : Spec'd"). Cards are moved by dragging them between columns. Below a divider,
+"Flow : Spec'd"). Cards are moved by dragging them between columns. Repository names are shown without the `pankosmia/` prefix. Below a divider,
 a card shows the last update time as on GitHub ("Updated 3 days ago", then an
 absolute date after 30 days) on the left, and on the right (from right to left) its
 assignees, its comment count (hidden when 0) and the linked pull request icon. Columns on every page are sorted by last update, most

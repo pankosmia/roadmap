@@ -279,7 +279,7 @@ function developmentSectionHtml(issue) {
         <li class="relation-row">
           <md-icon>call_split</md-icon>
           <a href="${escapeHtml(branchUrl(branch))}" target="_blank" rel="noopener"><span class="relation-title">${escapeHtml(branch.name)}</span>
-            <span class="relation-ref">${escapeHtml(branch.repo)}</span></a>
+            <span class="relation-ref">${escapeHtml(displayRepo(branch.repo))}</span></a>
         </li>`);
     body = `<ul class="relation-list">${[...pullRows, ...branchRows].join("")}</ul>`;
   }
@@ -292,8 +292,8 @@ function relationRowHtml(kind, item, disabled) {
     <li class="relation-row">
       <md-icon class="${closed ? "state-merged" : "state-open"}" title="${closed ? "Closed" : "Open"}">${closed ? "check_circle" : "adjust"}</md-icon>
       <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener"><span class="relation-title">${escapeHtml(item.title)}</span>
-        <span class="relation-ref">${escapeHtml(item.repo)}#${item.number}</span></a>
-      <md-icon-button class="relation-remove" data-remove-kind="${kind}" data-remove-id="${item.id}" aria-label="Remove ${escapeHtml(item.repo)}#${item.number}" ${disabled}><md-icon>close</md-icon></md-icon-button>
+        <span class="relation-ref">${escapeHtml(displayRepo(item.repo))}#${item.number}</span></a>
+      <md-icon-button class="relation-remove" data-remove-kind="${kind}" data-remove-id="${item.id}" aria-label="Remove ${escapeHtml(displayRepo(item.repo))}#${item.number}" ${disabled}><md-icon>close</md-icon></md-icon-button>
     </li>`;
 }
 

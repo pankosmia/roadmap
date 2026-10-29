@@ -44,7 +44,7 @@ function subIssueRef(subIssue, parent) {
   const [owner, name] = repoOf(subIssue);
   const [parentOwner, parentName] = repoOf(parent);
   const sameRepo = owner === parentOwner && name === parentName;
-  return sameRepo ? `#${subIssue.number}` : `${owner}/${name}#${subIssue.number}`;
+  return sameRepo ? `#${subIssue.number}` : `${displayRepo(`${owner}/${name}`)}#${subIssue.number}`;
 }
 
 async function fetchSubIssueTree(parent, path, depth = 0) {
