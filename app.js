@@ -210,6 +210,7 @@ async function loadIssues({ force = false } = {}) {
       isLoading = false;
       refreshButton.disabled = false;
       loadPullRequests();
+      preloadSubIssueOrders();
       return;
     }
   } else {
@@ -241,6 +242,7 @@ async function loadIssues({ force = false } = {}) {
     refreshPanel();
     summary.textContent = summaryText();
     loadPullRequests({ force: true });
+    preloadSubIssueOrders();
     if (totalCount > 1000) {
       showNotice(`GitHub search can return at most 1,000 results. Showing the first 1,000 of ${totalCount} issues.`);
     } else {
@@ -483,15 +485,15 @@ function avatarsHtml(issue, size, slot = "") {
 }
 
 function cardFooterHtml(issue) {
-  const parts = [avatarsHtml(issue, 24)];
+  // Read from the right: assignees, comment count, pull request count.
+  const parts = [developmentSlotHtml(issue)];
   if (issue.comments > 0) {
     parts.push(`<span class="stat" title="Comments"><md-icon>chat_bubble</md-icon>${issue.comments}</span>`);
   }
-  parts.push(developmentSlotHtml(issue));
-  const stats = parts.join("");
+  parts.push(avatarsHtml(issue, 24));
   return `<div class="card-footer">
-      <div class="card-stats">${stats}</div>
       ${lastUpdatedHtml(issue)}
+      <div class="card-stats">${parts.join("")}</div>
     </div>`;
 }
 

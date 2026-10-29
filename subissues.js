@@ -7,6 +7,11 @@ const expandedSubissues = new Set();
 // Parent issue id -> its subissues in the order GitHub stores them (the manual priority).
 const subIssueOrders = new Map();
 const subIssueLoads = new Map();
+const subIssueFetchedAt = new Map();
+// A list opened within this time of its last fetch is not fetched again.
+const SUBISSUE_ORDER_TTL = 60000;
+const PRELOAD_CONCURRENCY = 3;
+let preloadRun = 0;
 const reorderQueues = new Map();
 const pendingRefreshes = new Set();
 
@@ -46,20 +51,44 @@ async function fetchSubIssueTree(parent, path, depth = 0) {
   const url = `${issueApiUrl(repoOf(parent).join("/"), parent.number)}/sub_issues`;
   const children = await fetchAllPages(url);
   subIssueOrders.set(parent.id, children);
+  subIssueFetchedAt.set(parent.id, Date.now());
   if (depth + 1 >= SUBISSUE_MAX_DEPTH) return;
   const nextPath = new Set(path).add(parent.id);
   const withChildren = children.filter((child) => !nextPath.has(child.id) && hasSubIssues(liveIssue(child)));
   await Promise.all(withChildren.map((child) => fetchSubIssueTree(liveIssue(child), nextPath, depth + 1)));
 }
 
-function loadSubIssueOrders(root) {
+function hasFreshOrder(parent) {
+  return subIssueOrders.has(parent.id) && Date.now() - (subIssueFetchedAt.get(parent.id) || 0) < SUBISSUE_ORDER_TTL;
+}
+
+// A quiet load (the background preload) stays silent on failure; the list is then loaded when it is opened.
+function loadSubIssueOrders(root, { quiet = false } = {}) {
   if (subIssueLoads.has(root.id)) return subIssueLoads.get(root.id);
   const load = fetchSubIssueTree(root, new Set())
     .then(() => refreshSubissueSections(root.id))
-    .catch((error) => showNotice(`Could not load the subissues of ${repoOf(root)[1]}#${root.number}: ${apiErrorMessage(error)}`, true))
+    .catch((error) => {
+      if (!quiet) showNotice(`Could not load the subissues of ${repoOf(root)[1]}#${root.number}: ${apiErrorMessage(error)}`, true);
+    })
     .finally(() => subIssueLoads.delete(root.id));
   subIssueLoads.set(root.id, load);
   return load;
+}
+
+// Fetches the manual order of every card with subissues in the background, a few at a time, so that a list
+// opens in its final order at once. Without a token only the opened lists are fetched, to spare the API quota.
+async function preloadSubIssueOrders() {
+  if (!accessToken) return;
+  const run = ++preloadRun;
+  const roots = issues.filter((issue) => isOnBoard(issue) && !isNestedSubIssue(issue) && hasSubIssues(issue));
+  let next = 0;
+  const worker = async () => {
+    while (next < roots.length && run === preloadRun) {
+      const root = roots[next++];
+      if (!hasFreshOrder(root)) await loadSubIssueOrders(liveIssue(root), { quiet: true });
+    }
+  };
+  await Promise.all(Array.from({ length: PRELOAD_CONCURRENCY }, worker));
 }
 
 // The list is not rebuilt while it is being dragged; the refresh runs when the drag ends.
@@ -68,16 +97,13 @@ function refreshSubissueSections(rootId) {
     pendingRefreshes.add(rootId);
     return;
   }
-  for (const section of document.querySelectorAll(`.subissues[data-issue-id="${rootId}"]`)) {
-    if (!section.querySelector(".subissue-list").hidden) renderSubissueList(section);
-  }
+  // Closed lists are rebuilt too, so that they open in the right order.
+  for (const section of document.querySelectorAll(`.subissues[data-issue-id="${rootId}"]`)) renderSubissueList(section);
 }
 
 function refreshAllSubissueSections() {
   pendingRefreshes.clear();
-  for (const section of document.querySelectorAll(".subissues")) {
-    if (!section.querySelector(".subissue-list").hidden) renderSubissueList(section);
-  }
+  for (const section of document.querySelectorAll(".subissues")) renderSubissueList(section);
 }
 
 function flushSubissueRefreshes() {
@@ -152,7 +178,7 @@ function createSubissues(issue) {
         Subissues (${progress ? `${progress.done}/${progress.total}` : 0})
         <md-icon slot="icon">${expanded ? "expand_less" : "expand_more"}</md-icon>
       </md-filled-tonal-button>
-      ${progress ? `<md-linear-progress class="subissues-progress" aria-hidden="true" max="1" value="${progress.done / progress.total}"></md-linear-progress>` : ""}
+      ${progress ? `<span class="subissues-progress" aria-hidden="true" style="--progress: ${progress.done / progress.total}"></span>` : ""}
     </div>
     <div class="subissue-list" role="group" aria-label="Subissues" ${expanded ? "" : "hidden"}></div>
   `;
@@ -169,12 +195,12 @@ function createSubissues(issue) {
     toggle.querySelector("md-icon").textContent = open ? "expand_less" : "expand_more";
     if (open) {
       expandedSubissues.add(issue.id);
-      loadSubIssueOrders(liveIssue(issue));
+      if (!hasFreshOrder(issue)) loadSubIssueOrders(liveIssue(issue));
     } else {
       expandedSubissues.delete(issue.id);
     }
   });
-  if (expanded && !subIssueOrders.has(issue.id)) loadSubIssueOrders(liveIssue(issue));
+  if (expanded && !hasFreshOrder(issue)) loadSubIssueOrders(liveIssue(issue));
   return section;
 }
 
@@ -237,15 +263,18 @@ function commitReorder(section, node) {
 
 function reorderSubIssues(section, parent, ids, movedId) {
   const previous = subIssueOrders.get(parent.id);
-  if (!previous) return;
-  const byId = new Map(previous.map((item) => [item.id, item]));
-  const next = ids.map((id) => byId.get(id)).filter(Boolean);
-  if (next.length !== previous.length) {
-    renderSubissueList(section);
-    return;
+  // Without a loaded order (the list was opened before it finished loading) the move is still sent;
+  // the order is then loaded again afterwards.
+  if (previous) {
+    const byId = new Map(previous.map((item) => [item.id, item]));
+    const next = ids.map((id) => byId.get(id)).filter(Boolean);
+    if (next.length !== previous.length) {
+      renderSubissueList(section);
+      return;
+    }
+    if (next.every((item, index) => item.id === previous[index].id)) return;
+    subIssueOrders.set(parent.id, next);
   }
-  if (next.every((item, index) => item.id === previous[index].id)) return;
-  subIssueOrders.set(parent.id, next);
 
   const index = ids.indexOf(movedId);
   const body = index > 0 ? { sub_issue_id: movedId, after_id: ids[index - 1] } : { sub_issue_id: movedId, before_id: ids[1] };
@@ -253,6 +282,15 @@ function reorderSubIssues(section, parent, ids, movedId) {
   const run = (reorderQueues.get(parent.id) || Promise.resolve()).then(async () => {
     try {
       await sendRelationRequest("PATCH", url, body);
+      if (!previous) {
+        // A load that was already running may have read the old order: wait for it, then read again.
+        const root = issues.find((item) => item.id === Number(section.dataset.issueId));
+        if (root) {
+          await subIssueLoads.get(root.id);
+          subIssueOrders.delete(parent.id);
+          await loadSubIssueOrders(root);
+        }
+      }
     } catch (error) {
       showNotice(`Could not reorder the subissues of ${repoOf(parent)[1]}#${parent.number}: ${apiErrorMessage(error)}`, true);
       // Reload the real order from GitHub once the pending reorders are done.
