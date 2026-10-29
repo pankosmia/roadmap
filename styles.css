@@ -626,12 +626,15 @@ button.issue-title:hover {
   align-items: center;
   padding: 4px 0 4px 4px;
   border-radius: var(--md-sys-shape-xs);
-  color: var(--md-sys-color-on-surface-variant);
+  color: color-mix(in srgb, var(--md-sys-color-on-surface-variant) 45%, transparent);
   cursor: grab;
   --md-icon-size: 20px;
 }
 
-.subissue-handle:hover,
+.subissue-handle:hover {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
 .subissue-handle:focus-visible {
   color: var(--md-sys-color-primary);
 }
@@ -1059,28 +1062,29 @@ md-outlined-text-field {
   touch-action: none;
 }
 
+/* Material 3 drag handle: a slim pill, subdued at rest and stronger on hover, focus and drag. */
 .panel-resizer::after {
   content: "";
   position: absolute;
   top: 50%;
-  left: 2px;
-  width: 16px;
-  height: 64px;
-  border: 1px solid var(--md-sys-color-outline);
-  border-radius: 8px;
-  background:
-    radial-gradient(circle, var(--md-sys-color-on-surface-variant) 1.5px, transparent 2px) center / 6px 8px repeat-y,
-    var(--md-sys-color-surface-container-high, var(--md-sys-color-surface));
-  box-shadow: 0 1px 3px rgb(0 0 0 / .3);
+  left: 8px;
+  width: 4px;
+  height: 48px;
+  border-radius: 2px;
+  background: var(--md-sys-color-on-surface-variant);
+  opacity: .4;
   transform: translateY(-50%);
-  transition: border-color .15s, box-shadow .15s;
+  transition: opacity .15s, background-color .15s;
 }
 
-.panel-resizer:hover::after,
+.panel-resizer:hover::after {
+  opacity: .8;
+}
+
 .panel-resizer:focus-visible::after,
 .is-resizing .panel-resizer::after {
-  border-color: var(--md-sys-color-primary);
-  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
+  background: var(--md-sys-color-primary);
+  opacity: 1;
 }
 
 .panel-resizer:focus-visible {
