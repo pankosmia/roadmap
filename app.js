@@ -194,7 +194,10 @@ async function loadIssues({ force = false } = {}) {
   loadOpenPulls();
 
   // Show cached issues at once; only refetch when they are stale or a refresh is forced.
-  if (force) subIssueOrders.clear();
+  if (force) {
+    subIssueOrders.clear();
+    expandedSubissues.clear();
+  }
   const cached = force ? null : readIssuesCache();
   if (cached) {
     issues = cached.issues;
@@ -531,6 +534,11 @@ function onDragStart(event) {
     event.preventDefault();
     return;
   }
+  const pressed = pressedSubissue(event.currentTarget);
+  if (pressed) {
+    startSubissueDrag(event, pressed);
+    return;
+  }
   const issue = issues.find((item) => item.id === Number(event.currentTarget.dataset.issueId));
   if (!issue) {
     event.preventDefault();
@@ -539,6 +547,7 @@ function onDragStart(event) {
   beginDrag("card", issue, event.currentTarget);
   event.dataTransfer.setData("text/plain", event.currentTarget.dataset.issueId);
   event.dataTransfer.effectAllowed = "move";
+  setDragGhost(event, issue);
   event.currentTarget.classList.add("dragging");
 }
 
