@@ -569,6 +569,11 @@ button.issue-title:hover {
   clip-path: inset(0 round 16px);
 }
 
+/* A nested button lines up with the row's title, past the drag handle. */
+.subissues-head-nested {
+  margin: 0 0 4px 28px;
+}
+
 .subissues-toggle {
   --md-filled-tonal-button-container-height: 32px;
   --md-filled-tonal-button-label-text-size: 12px;
@@ -613,45 +618,6 @@ button.issue-title:hover {
 .subissue-row .subissue-item {
   flex: 1;
   min-width: 0;
-}
-
-.subissue-toggle,
-.subissue-toggle-spacer {
-  flex: none;
-  width: 52px;
-}
-
-.subissue-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  height: 32px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--md-sys-shape-xs);
-  background: transparent;
-  color: var(--md-sys-color-on-surface-variant);
-  cursor: pointer;
-  --md-icon-size: 20px;
-}
-
-.subissue-toggle:hover {
-  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
-  color: var(--md-sys-color-primary);
-}
-
-.subissue-toggle:focus-visible {
-  outline: 2px solid var(--md-sys-color-primary);
-}
-
-/* The count of the hidden subissues; an open row shows them instead. */
-.subissue-count {
-  font: var(--md-type-label-small);
-}
-
-.subissue-toggle[aria-expanded="true"] .subissue-count {
-  display: none;
 }
 
 .subissue-handle {

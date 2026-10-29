@@ -119,28 +119,33 @@ function subIssueHandleHtml(subIssue) {
   return `<span class="subissue-handle" role="button" tabindex="0" draggable="true" title="Drag to move or reorder" aria-label="${escapeHtml(label)}"><md-icon>drag_indicator</md-icon></span>`;
 }
 
-function subIssueToggleLabel(subIssue, expanded) {
-  return `${expanded ? "Collapse" : "Expand"} the subissues of #${subIssue.number}`;
+// The "Subissues" button with its progress bar, shared by cards and nested subissues.
+function subissuesHeadHtml(progress, expanded, className = "") {
+  return `
+    <div class="subissues-head ${className}">
+      <md-filled-tonal-button class="subissues-toggle" type="button" trailing-icon aria-expanded="${expanded}">
+        Subissues (${progress ? `${progress.done}/${progress.total}` : 0})
+        <md-icon slot="icon">${expanded ? "expand_less" : "expand_more"}</md-icon>
+      </md-filled-tonal-button>
+      ${progress ? `<span class="subissues-progress" aria-hidden="true" style="--progress: ${progress.done / progress.total}"></span>` : ""}
+    </div>`;
 }
 
-function subIssueToggleHtml(subIssue, count, expanded) {
-  return `<button type="button" class="subissue-toggle" aria-expanded="${expanded}" aria-label="${escapeHtml(subIssueToggleLabel(subIssue, expanded))}" title="${expanded ? "Collapse" : "Expand"} subissues"><md-icon>${expanded ? "expand_more" : "chevron_right"}</md-icon><span class="subissue-count">${count}</span></button>`;
+function setSubissuesToggleState(toggle, open) {
+  toggle.setAttribute("aria-expanded", String(open));
+  toggle.querySelector("md-icon").textContent = open ? "expand_less" : "expand_more";
 }
 
 // Opens or closes the children of a nested subissue, in the page and in the remembered state.
 function setSubissueNodeExpanded(node, open) {
   const children = node.querySelector(":scope > .subissue-children");
-  const toggle = node.querySelector(":scope > .subissue-row > .subissue-toggle");
+  const toggle = node.querySelector(":scope > .subissues-head .subissues-toggle");
   if (!children || !toggle) return;
   const id = Number(node.dataset.issueId);
-  const subIssue = findKnownIssue(id);
   if (open) expandedSubissueNodes.add(id);
   else expandedSubissueNodes.delete(id);
   children.hidden = !open;
-  toggle.setAttribute("aria-expanded", String(open));
-  if (subIssue) toggle.setAttribute("aria-label", subIssueToggleLabel(subIssue, open));
-  toggle.title = `${open ? "Collapse" : "Expand"} subissues`;
-  toggle.querySelector("md-icon").textContent = open ? "expand_more" : "chevron_right";
+  setSubissuesToggleState(toggle, open);
 }
 
 // Shows the subissues leading to this issue, so that a freshly moved subissue is not hidden in a collapsed row.
@@ -178,15 +183,10 @@ function createSubIssueNode(parent, subIssue, path, canDrag) {
   if (children) {
     const expanded = expandedSubissueNodes.has(subIssue.id);
     children.hidden = !expanded;
-    const progress = subIssueProgress(subIssue);
-    const count = progress ? `${progress.done}/${progress.total}` : String(children.childElementCount);
-    row.insertAdjacentHTML("afterbegin", subIssueToggleHtml(subIssue, count, expanded));
-    row.querySelector(".subissue-toggle").addEventListener("click", () => {
-      setSubissueNodeExpanded(node, children.hidden);
-    });
+    const progress = subIssueProgress(subIssue) || { done: 0, total: children.childElementCount };
+    node.insertAdjacentHTML("beforeend", subissuesHeadHtml(progress, expanded, "subissues-head-nested"));
+    node.querySelector(".subissues-toggle").addEventListener("click", () => setSubissueNodeExpanded(node, children.hidden));
     node.append(children);
-  } else {
-    row.insertAdjacentHTML("afterbegin", '<span class="subissue-toggle-spacer" aria-hidden="true"></span>');
   }
   return node;
 }
@@ -218,13 +218,7 @@ function createSubissues(issue) {
   section.className = "subissues";
   section.dataset.issueId = issue.id;
   section.innerHTML = `
-    <div class="subissues-head">
-      <md-filled-tonal-button class="subissues-toggle" type="button" trailing-icon aria-expanded="${expanded}">
-        Subissues (${progress ? `${progress.done}/${progress.total}` : 0})
-        <md-icon slot="icon">${expanded ? "expand_less" : "expand_more"}</md-icon>
-      </md-filled-tonal-button>
-      ${progress ? `<span class="subissues-progress" aria-hidden="true" style="--progress: ${progress.done / progress.total}"></span>` : ""}
-    </div>
+    ${subissuesHeadHtml(progress, expanded)}
     <div class="subissue-list" role="group" aria-label="Subissues" ${expanded ? "" : "hidden"}></div>
   `;
   const toggle = section.querySelector(".subissues-toggle");
@@ -236,8 +230,7 @@ function createSubissues(issue) {
   toggle.addEventListener("click", () => {
     const open = list.hidden;
     list.hidden = !open;
-    toggle.setAttribute("aria-expanded", String(open));
-    toggle.querySelector("md-icon").textContent = open ? "expand_less" : "expand_more";
+    setSubissuesToggleState(toggle, open);
     if (open) {
       expandedSubissues.add(issue.id);
       if (!hasFreshOrder(issue)) loadSubIssueOrders(liveIssue(issue));
