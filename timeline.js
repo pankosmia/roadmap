@@ -1132,10 +1132,10 @@ function createTimeline(container) {
   section.innerHTML = `
     <div class="timeline-bar">
       <h2 class="timeline-heading" id="timeline-heading">Timeline</h2>
-      <div class="timeline-filters" role="group" aria-label="Show">
-        <button type="button" class="timeline-chip" data-filter="all" aria-pressed="true">All</button>
-        <button type="button" class="timeline-chip" data-filter="comments" aria-pressed="false">Comments</button>
-        <button type="button" class="timeline-chip" data-filter="activity" aria-pressed="false">Activity</button>
+      <div class="connected-group timeline-filters" role="group" aria-label="Show">
+        <button type="button" class="connected-button" data-filter="all" aria-pressed="true"><md-ripple></md-ripple><md-focus-ring></md-focus-ring><span>All</span></button>
+        <button type="button" class="connected-button" data-filter="comments" aria-pressed="false"><md-ripple></md-ripple><md-focus-ring></md-focus-ring><span>Comments</span></button>
+        <button type="button" class="connected-button" data-filter="activity" aria-pressed="false"><md-ripple></md-ripple><md-focus-ring></md-focus-ring><span>Activity</span></button>
       </div>
       <button type="button" class="timeline-chip timeline-expand" aria-pressed="false">Show all activity</button>
       <md-icon-button class="timeline-order" type="button"><md-icon>arrow_downward</md-icon></md-icon-button>

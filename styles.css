@@ -2182,8 +2182,12 @@ md-icon.pr-closed { color: var(--pr-color); }
 }
 
 .timeline-filters {
-  display: flex;
-  gap: 4px;
+  width: auto;
+}
+
+.timeline-filters .connected-button {
+  height: 32px;
+  padding: 0 14px;
 }
 
 .timeline-chip {
