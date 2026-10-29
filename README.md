@@ -84,20 +84,25 @@ recent first. The **Subissues (done/total)** button, with a thin progress bar al
 subissues in the manual order stored on GitHub (loaded when the list opens). Each
 row shows its status icon (closed ones are dimmed), reference and assignees, and
 nested subissues appear indented under their parent; clicking a row opens it in the
-side panel. With a token, the drag handle (or the up and down arrow keys when it is
+side panel (closed subissues too; they stay off the board). With a token, the drag handle (or the up and down arrow keys when it is
 focused) reorders siblings live and saves the new priority on GitHub, and
-**Add subissue** creates a new issue in the parent's repository and links it.
+**Add subissue** opens the Create issue panel with the parent already set (and its
+repository selected); the new issue is linked under the parent when it is created.
 Moving an issue replaces all of its existing `Version : ...`
 labels with the selected version label; other labels are preserved.
 
-Drag and drop also changes the hierarchy. Hold a card or a subissue (dragged by its row or its handle) over another
-card or subissue row for a moment (or press Shift) to arm it: a solid outline means
-"move under this issue", a line between two rows means "insert at this position", and
-red means not allowed (itself, its own subissue, or deeper than 8 levels). A tooltip
-below the pointer says what the drop does; the dragged issue is shown as a small label above and to the left of it. Before the hold completes (dashed outline
-and a fill sweeping across the target) a drop still just moves the card to the column,
-except for a subissue over its own parent card, which stays where it is (that is how
-you reorder without risking to detach it). Dropping a subissue on a
+Drag and drop also changes the hierarchy. Drag a card, or a subissue by its row or its
+handle, over a subissue row: the target shows at once. The middle of a row means
+"move under this issue" (solid outline), the top or bottom 40% means "insert at this
+position" (a thick line with a soft band showing the target size), and red means not
+allowed (itself, its own subissue, or deeper than 8 levels). The small gaps between
+rows snap to the nearest row, so the target does not flicker. Over a whole card, hold
+for a moment (or press Shift) to arm it; a fill sweeps across the card meanwhile, and
+a drop before that just moves the card to the column. A tooltip below the pointer says
+what the drop does; the dragged issue is shown as a small label. While reordering
+siblings, the dragged row stays in the list as an outlined placeholder and the tooltip
+says "Release to put #N here". A subissue dropped on its own parent card stays where it
+is. Dropping a subissue on a
 column removes it from its parent and moves it there (on a version page it also gets
 that page's Version label). Every hierarchy change shows an **Undo** snackbar.
 

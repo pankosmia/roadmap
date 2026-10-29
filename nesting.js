@@ -5,13 +5,13 @@
 const MAX_NESTING = 8;
 // Nesting under a card or a row needs a short hold, so that crossing cards on the way to a column never nests by accident.
 const NEST_DWELL_MS = 400;
-// The target is only outlined after a short stay, so that sweeping over rows while reordering stays calm.
-const CANDIDATE_DELAY_MS = 150;
-document.documentElement.style.setProperty("--nest-dwell", `${NEST_DWELL_MS - CANDIDATE_DELAY_MS}ms`);
+document.documentElement.style.setProperty("--nest-dwell", `${NEST_DWELL_MS}ms`);
 const EXPAND_DWELL_MS = 900;
 const EDGE_ZONE = 0.3;
 // Among siblings the edges (reorder) are larger and the middle (nest into a sibling) is a narrow, deliberate zone.
 const SIBLING_EDGE_ZONE = 0.4;
+// Gaps between rows (and the gap under the Subissues button) belong to the nearest row within this distance.
+const MAGNET_PX = 14;
 const SCROLL_EDGE = 48;
 const SCROLL_STEP = 12;
 
@@ -24,7 +24,7 @@ function beginDrag(kind, issue, node) {
   endDrag();
   const rootId = Number(node?.closest(".issue-card")?.dataset.issueId) || 0;
   dragState = {
-    kind, issue, node, rootId, key: "", armed: false, timer: 0, expandTimer: 0, showTimer: 0, ready: false,
+    kind, issue, node, rootId, key: "", armed: false, timer: 0, expandTimer: 0, 
     plan: null, shown: "", reordered: false, committed: false, line: null, lineTarget: null, lastY: null, dir: 0,
   };
   dragHint = document.createElement("div");
@@ -50,7 +50,6 @@ function endDrag() {
   dragState = null;
   clearTimeout(state.timer);
   clearTimeout(state.expandTimer);
-  clearTimeout(state.showTimer);
   clearIndicators();
   dragHint?.remove();
   dragHint = null;
@@ -112,7 +111,22 @@ function invalidReason(plan) {
   return "";
 }
 
-function rowCandidate(event, row, rootId) {
+// An insertion between two rows is always expressed as "before the next row" (or "before the first child"),
+// so the same place never has two different targets that the pointer could flip between.
+function insertCandidate(parent, issue, node, zone, el, rootId) {
+  if (zone === "after") {
+    const firstChild = node.querySelector(":scope > .subissue-children > .subissue-node");
+    const next = firstChild || node.nextElementSibling;
+    if (next && next.classList.contains("subissue-node")) {
+      const nextIssue = findKnownIssue(Number(next.dataset.issueId));
+      if (nextIssue) return insertCandidate(firstChild ? issue : parent, nextIssue, next, "before", el, rootId);
+    }
+  }
+  return { type: "insert", key: `insert:${issue.id}:${zone}`, parent, anchor: issue, node, zone, el, rootId };
+}
+
+// forcedZone is set when the pointer is in a gap next to the row instead of on it.
+function rowCandidate(event, row, rootId, forcedZone = "") {
   const drag = dragState;
   const node = row.parentElement;
   const group = node.parentElement;
@@ -122,17 +136,32 @@ function rowCandidate(event, row, rootId) {
   if (!issue || !parent) return null;
 
   const sameGroup = drag.kind === "subissue" && drag.node.parentElement === group;
-  const edge = sameGroup ? SIBLING_EDGE_ZONE : EDGE_ZONE;
-  const rect = row.getBoundingClientRect();
-  const ratio = (event.clientY - rect.top) / rect.height;
-  if (ratio >= edge && ratio <= 1 - edge) {
-    return { type: "nest", key: `nest:${issue.id}`, parent: issue, el: row, rootId };
+  let zone = forcedZone;
+  if (!zone) {
+    const edge = sameGroup ? SIBLING_EDGE_ZONE : EDGE_ZONE;
+    const rect = row.getBoundingClientRect();
+    const ratio = (event.clientY - rect.top) / rect.height;
+    if (ratio >= edge && ratio <= 1 - edge) {
+      return { type: "nest", key: `nest:${issue.id}`, parent: issue, el: row, rootId };
+    }
+    zone = ratio < edge ? "before" : "after";
   }
-  const zone = ratio < edge ? "before" : "after";
-  if (sameGroup) {
-    return { type: "reorder", key: "reorder", node, zone, el: row };
+  if (sameGroup) return { type: "reorder", key: "reorder", node, zone, el: row };
+  return insertCandidate(parent, issue, node, zone, row, rootId);
+}
+
+function nearestRowCandidate(event, list, rootId) {
+  let best = null;
+  let bestDistance = MAGNET_PX + 1;
+  for (const row of list.querySelectorAll(".subissue-row")) {
+    const rect = row.getBoundingClientRect();
+    const distance = event.clientY < rect.top ? rect.top - event.clientY : event.clientY - rect.bottom;
+    if (distance >= 0 && distance < bestDistance) {
+      best = { row, zone: event.clientY < rect.top ? "before" : "after" };
+      bestDistance = distance;
+    }
   }
-  return { type: "insert", key: `insert:${issue.id}:${zone}`, parent, anchor: issue, node, zone, el: row, rootId };
+  return best ? rowCandidate(event, best.row, rootId, best.zone) : null;
 }
 
 function dragCandidate(event) {
@@ -143,6 +172,11 @@ function dragCandidate(event) {
   if (dragState.kind === "card" && rootId === dragState.issue.id) return null;
   const row = target.closest(".subissue-row");
   if (row) return rowCandidate(event, row, rootId);
+  const list = target.closest(".subissue-list");
+  if (list && !list.hidden) {
+    const near = nearestRowCandidate(event, list, rootId);
+    if (near) return near;
+  }
   // Elsewhere on its own parent card, a dragged subissue stays where it is (leaving the card is how it gets out).
   if (dragState.kind === "subissue" && rootId === dragState.rootId) return { type: "hold", key: "hold", el: card, rootId };
   const cardIssue = issues.find((item) => item.id === rootId);
@@ -151,7 +185,8 @@ function dragCandidate(event) {
 }
 
 function needsDwell(candidate) {
-  return candidate.type !== "reorder" && candidate.type !== "self" && candidate.type !== "hold";
+  // Pointing at a subissue row is deliberate and arms at once; resting on a whole card needs the short hold.
+  return candidate.type === "nest" && candidate.el.classList.contains("issue-card");
 }
 
 function startDwell(drag, candidate) {
@@ -159,10 +194,6 @@ function startDwell(drag, candidate) {
     drag.armed = true;
     if (dragState === drag && drag.lastEvent) evaluate(drag.lastEvent);
   }, NEST_DWELL_MS);
-  drag.showTimer = setTimeout(() => {
-    drag.ready = true;
-    if (dragState === drag && drag.lastEvent) evaluate(drag.lastEvent);
-  }, CANDIDATE_DELAY_MS);
   const toggle = candidate.type === "nest" && candidate.el.classList.contains("issue-card") ? candidate.el.querySelector(".subissues-toggle") : null;
   if (toggle && candidate.el.querySelector(".subissue-list")?.hidden) {
     drag.expandTimer = setTimeout(() => toggle.click(), EXPAND_DWELL_MS);
@@ -188,6 +219,7 @@ function hintText(candidate, active, reason, event) {
   if (reason) return reason;
   if (active?.type === "nest") return `Move ${source} under #${active.parent.number}`;
   if (active?.type === "insert") return `Insert ${source} in the subissues of #${active.parent.number}`;
+  if (active?.type === "reorder") return `Release to put ${source} here`;
   if (active) return "";
   const column = event.target instanceof Element ? event.target.closest(".column") : null;
   if (column && drag.kind === "subissue" && drag.issue.parent_issue_url) {
@@ -203,7 +235,7 @@ function positionDropLine(drag) {
   const rect = node.getBoundingClientRect();
   drag.line.style.left = `${rect.left + 8}px`;
   drag.line.style.width = `${Math.max(0, rect.width - 16)}px`;
-  drag.line.style.top = `${(zone === "before" ? rect.top : rect.bottom) - 1}px`;
+  drag.line.style.top = `${(zone === "before" ? rect.top : rect.bottom) - 2}px`;
 }
 
 function showIndicators(candidate, active, reason, event) {
@@ -250,10 +282,8 @@ function evaluate(event) {
   if (key !== drag.key) {
     clearTimeout(drag.timer);
     clearTimeout(drag.expandTimer);
-    clearTimeout(drag.showTimer);
     drag.key = key;
     drag.armed = false;
-    drag.ready = false;
     if (candidate && needsDwell(candidate)) startDwell(drag, candidate);
   }
   if (candidate && event.shiftKey) drag.armed = true;
@@ -264,7 +294,7 @@ function evaluate(event) {
   // Over its own parent card a subissue never falls back to the column drop, which would take it out of its parent.
   const hold = !active && Boolean(candidate) && drag.kind === "subissue" && candidate.rootId === drag.rootId;
   if (hold) clearColumnState();
-  showIndicators(candidate && (active || drag.ready) ? candidate : null, active, reason, event);
+  showIndicators(candidate, active, reason, event);
   return { active, reason, hold };
 }
 

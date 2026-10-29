@@ -1245,7 +1245,9 @@ function repoOf(issue) {
 const DRAFT_ID = "new-issue";
 let draftIssue = null;
 
-function newDraftIssue(repository = DEFAULT_REPOSITORY) {
+function newDraftIssue(repository = DEFAULT_REPOSITORY, parent = null) {
+  const relationships = emptyRelations();
+  if (parent) relationships.parent = relationItem(parent);
   return {
     id: DRAFT_ID,
     draft: true,
@@ -1253,7 +1255,7 @@ function newDraftIssue(repository = DEFAULT_REPOSITORY) {
     body: "",
     labels: [],
     assignees: [],
-    relationships: emptyRelations(),
+    relationships,
     repository_url: `${API_ROOT}/repos/${ORGANIZATION}/${repository}`
   };
 }
@@ -1463,6 +1465,8 @@ async function renderMarkdownPreview(text) {
 function openPanel(issue) {
   const elements = ensurePanel();
   flushIssueSaves();
+  // A closed subissue only comes from its parent's list; the panel looks issues up here (the board hides it, see isOnBoard).
+  if (!issue.draft && !issues.some((item) => item.id === issue.id)) issues.push(issue);
   panelIssueId = issue.id;
   panelMeta = { labels: null, assignees: null };
   panelErrors = new Set();
@@ -1482,13 +1486,15 @@ function openPanel(issue) {
 
 let draftRepoNames = [DEFAULT_REPOSITORY];
 
-async function openNewIssuePanel() {
+// With a parent, the new issue starts in the parent's repository and is linked to it as a subissue on creation.
+async function openNewIssuePanel(parent = null) {
   if (!accessToken) {
     openAuthDialog();
     return;
   }
-  draftIssue = newDraftIssue();
-  draftRepoNames = [DEFAULT_REPOSITORY];
+  const repository = parent ? repoOf(parent)[1] : DEFAULT_REPOSITORY;
+  draftIssue = newDraftIssue(repository, parent);
+  draftRepoNames = [repository];
   openPanel(draftIssue);
   const names = await loadOrganizationRepos();
   if (panelIssueId !== DRAFT_ID) return;
@@ -1699,6 +1705,8 @@ async function createIssue(draft, title) {
     summary.textContent = summaryText();
     closePanel();
     const failures = await applyDraftRelationships(created, draft.relationships);
+    const parentItem = draft.relationships.parent;
+    if (parentItem && !failures.some((failure) => failure.startsWith(`${parentItem.repo}#${parentItem.number} `))) noteSubIssueAdded(parentItem, created);
     if (failures.length) showNotice(`Issue #${created.number} was created, but some relationships could not be set: ${failures.join(", ")}.`, true);
   } catch (error) {
     showPanelError(`Could not create the issue: ${apiErrorMessage(error)}`);
@@ -1706,6 +1714,21 @@ async function createIssue(draft, title) {
     panelBusy = false;
     refreshPanel();
   }
+}
+
+// Updates the parent card (count and list) once a new issue has been linked under it.
+function noteSubIssueAdded(parentItem, created) {
+  const parent = issues.find((item) => item.id === parentItem.id);
+  if (!parent) return;
+  const before = parent.sub_issues_summary || { total: subIssuesOf(parent).length, completed: 0 };
+  const total = before.total + 1;
+  parent.sub_issues_summary = { total, completed: before.completed, percent_completed: Math.round((before.completed / total) * 100) };
+  created.parent_issue_url = parent.url;
+  const order = subIssueOrders.get(parent.id);
+  if (order) order.push(created);
+  saveIssuesCache();
+  renderBoard();
+  summary.textContent = summaryText();
 }
 
 async function patchIssue(issue, body) {
@@ -2077,7 +2100,7 @@ async function loadOrganizationRepos() {
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
-if (addButton) addButton.addEventListener("click", openNewIssuePanel);
+if (addButton) addButton.addEventListener("click", () => openNewIssuePanel());
 
 if (document.body.dataset.page === "detail") {
   const title = document.querySelector("#page-title");
