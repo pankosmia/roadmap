@@ -172,7 +172,11 @@ function saveIssuesCache() {
   try {
     // Archived issues are loaded on demand and are not cached.
     const archivedIds = new Set(archive.ids);
-    sessionStorage.setItem(ISSUES_CACHE_KEY, JSON.stringify({ time: Date.now(), issues: issues.filter((issue) => !archivedIds.has(issue.id)) }));
+    // "time" is when the issues were last known to be current, not when they were last edited here.
+    sessionStorage.setItem(
+      ISSUES_CACHE_KEY,
+      JSON.stringify({ time: issuesFetchedAt, reconciledAt: liveSync.lastReconcileAt, issues: issues.filter((issue) => !archivedIds.has(issue.id)) })
+    );
   } catch {
     // Storage may be unavailable or full; the board then reloads on each page view.
   }
@@ -201,6 +205,8 @@ async function loadIssues({ force = false } = {}) {
   const cached = force ? null : readIssuesCache();
   if (cached) {
     issues = cached.issues;
+    issuesFetchedAt = cached.time || 0;
+    liveSync.lastReconcileAt = cached.reconciledAt || cached.time || 0;
     resetArchive();
     await loadColumnLabelColors();
     renderBoard();
@@ -218,11 +224,12 @@ async function loadIssues({ force = false } = {}) {
     summary.textContent = "Loading issues…";
   }
 
+  const startedAt = Date.now();
   try {
     const { items: openIssues, totalCount } = await searchAllIssues("is:open");
     let closedIssues = [];
     try {
-      closedIssues = (await searchAllIssues(`is:closed closed:>=${archiveCutoff()} ${DONE_VERSION_QUERY}`)).items;
+      closedIssues = (await searchAllIssues(closedBoardQuery())).items;
     } catch (error) {
       if (!cached) showNotice(`Closed issues could not be loaded: ${apiErrorMessage(error)}`, true);
     }
@@ -234,6 +241,7 @@ async function loadIssues({ force = false } = {}) {
       if (previousPulls.has(issue.id)) issue.pulls = previousPulls.get(issue.id);
     }
     issues = results;
+    markFullSync(startedAt);
     resetArchive();
     saveIssuesCache();
     loadFailed = false;
@@ -268,14 +276,20 @@ async function loadIssues({ force = false } = {}) {
   }
 }
 
-async function searchAllIssues(state) {
+// Closed issues that stay on the board: those in a Done column, not yet archived.
+function closedBoardQuery() {
+  return `is:closed closed:>=${archiveCutoff()} ${DONE_VERSION_QUERY}`;
+}
+
+// A quiet search (the background sync) leaves the progress text of the summary alone.
+async function searchAllIssues(state, { quiet = false } = {}) {
   const query = encodeURIComponent(`org:${ORGANIZATION} is:issue ${state} sort:updated-desc`);
   const firstPage = await githubRequest(`${API_ROOT}/search/issues?q=${query}&per_page=${PAGE_SIZE}&page=1`, {}, accessToken);
   const totalCount = firstPage.total_count;
   const pages = Math.ceil(Math.min(totalCount, 1000) / PAGE_SIZE);
   const items = [...firstPage.items];
   for (let page = 2; page <= pages; page += 1) {
-    summary.textContent = `Loading issues… ${Math.min(items.length, totalCount)} of ${totalCount}`;
+    if (!quiet) summary.textContent = `Loading issues… ${Math.min(items.length, totalCount)} of ${totalCount}`;
     const result = await githubRequest(`${API_ROOT}/search/issues?q=${query}&per_page=${PAGE_SIZE}&page=${page}`, {}, accessToken);
     items.push(...result.items);
   }
@@ -641,6 +655,7 @@ async function moveIssue(issue, version, { restoreParent = null } = {}) {
   notice.hidden = true;
 
   try {
+    labels = await rebaseLabels(issue, issue.labels, labels);
     const updated = await githubRequest(
       `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/${issue.number}`,
       {
@@ -778,6 +793,7 @@ async function changeIssueState(issue, body, { duplicateOf = null, undoLabels = 
       );
       commentId = comment.id;
     }
+    if (body.labels) body = { ...body, labels: await rebaseLabels(issue, issue.labels, body.labels) };
     const updated = await githubRequest(
       issueEndpoint(issue),
       { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
@@ -976,9 +992,9 @@ function resetArchive() {
   if (archiveDialog?.open) loadMoreArchive();
 }
 
-function searchPage(query, page, perPage = PAGE_SIZE) {
+function searchPage(query, page, perPage = PAGE_SIZE, options = {}) {
   const q = encodeURIComponent(`org:${ORGANIZATION} is:issue ${query} sort:updated-desc`);
-  return githubRequest(`${API_ROOT}/search/issues?q=${q}&per_page=${perPage}&page=${page}`, {}, accessToken);
+  return githubRequest(`${API_ROOT}/search/issues?q=${q}&per_page=${perPage}&page=${page}`, options, accessToken);
 }
 
 function archiveSourceDone(source) {
@@ -1810,9 +1826,19 @@ async function runIssueSave(issue) {
   save.running = true;
   const [owner, repository] = repoOf(issue);
   try {
+    let request = body;
+    if (body.labels || body.assignees) {
+      // Rebase the change on what GitHub has now, so that a teammate's change to the same lists is kept.
+      const remote = await readRemoteIssue(issue);
+      if (remote) {
+        request = { ...body };
+        if (body.labels) request.labels = rebaseList(save.confirmed.labels.map((label) => label.name), body.labels, remote.labels.map((label) => label.name));
+        if (body.assignees) request.assignees = rebaseList(save.confirmed.assignees.map((user) => user.login), body.assignees, remote.assignees.map((user) => user.login));
+      }
+    }
     const updated = await githubRequest(
       `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/${issue.number}`,
-      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) },
       accessToken
     );
     save.confirmed = { labels: updated.labels, assignees: updated.assignees };
@@ -2148,7 +2174,7 @@ async function restoreToken() {
   }
 }
 
-restoreToken().finally(loadIssues);
+restoreToken().finally(loadIssues).finally(startLiveSync);
 
 function initThemeToggle() {
   const options = document.querySelectorAll("[data-theme-option]");

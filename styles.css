@@ -962,6 +962,29 @@ md-outlined-text-field {
   font: var(--md-type-body-medium);
 }
 
+/* Sits above the Undo snackbar, so that both can be shown together. */
+.sync-snackbar {
+  bottom: 72px;
+}
+
+.issue-card.remote-updated,
+.subissue-node.remote-updated > .subissue-row {
+  animation: remote-updated 6s ease-out;
+}
+
+@keyframes remote-updated {
+  from { box-shadow: 0 0 0 2px var(--md-sys-color-primary); }
+  to { box-shadow: 0 0 0 2px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .issue-card.remote-updated,
+  .subissue-node.remote-updated > .subissue-row {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--md-sys-color-primary);
+  }
+}
+
 .snackbar md-text-button {
   --md-text-button-label-text-color: var(--md-sys-color-inverse-primary);
   --md-text-button-hover-label-text-color: var(--md-sys-color-inverse-primary);

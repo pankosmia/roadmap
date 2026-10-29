@@ -51,6 +51,20 @@ with a Backlog or Unassigned Version is archived at once. Archived issues are lo
 from GitHub 100 at a time, with a **Load 100 more** button at the end of the list
 (GitHub search returns at most 1,000 issues per query).
 
+**Live updates** (`live-sync.js`): the board follows what teammates change on
+GitHub without a manual **Refresh**. While the tab is visible, one search request per
+minute (every two minutes without a token) asks for the issues updated since the last
+check and merges them by issue id; the check also runs when the tab becomes visible or
+regains focus. A full reconcile every 10 minutes also catches deleted or transferred
+issues and changes that do not bump an issue's update time. Changed cards flash briefly
+and a snackbar says how many issues were updated. Updates wait while a card is being
+dragged, a field on the board is being typed in or a pull request popover is open. An
+open panel follows the issue; its title and description are only replaced when nothing
+was typed in them, otherwise a warning is shown. On a rate limit or an error the checks
+slow down (the tooltip of **Refresh** says so), and **Refresh** still reloads everything.
+Label and assignee changes are rebased on the issue as GitHub has it just before saving,
+so a teammate's concurrent change to the same lists is kept.
+
 Type and Stack are always marked with `*`, and their last selected choice cannot
 be deselected. Existing issues without these labels are left as they are. When
 creating an issue, they are mandatory (no default): pressing **Create** with a
