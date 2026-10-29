@@ -186,7 +186,7 @@ function openPullRowHtml(pull) {
     ? pull.issues
         .map(
           (issue) =>
-            `<a class="pulls-issue-chip" href="${escapeHtml(issue.url)}" target="_blank" rel="noopener" title="${escapeHtml(issue.title)}"><md-icon>link</md-icon>${escapeHtml(issue.repo)}#${issue.number}</a>`
+            `<a class="pulls-issue-chip" href="${escapeHtml(issue.url)}" target="_blank" rel="noopener" title="${escapeHtml(issue.title)}"><md-icon>link</md-icon>${escapeHtml(displayRepo(issue.repo))}#${issue.number}</a>`
         )
         .join("")
     : '<span class="pulls-orphan-chip" title="Not linked to an issue in its Development area"><md-icon>link_off</md-icon>No issue</span>';
@@ -198,7 +198,7 @@ function openPullRowHtml(pull) {
       <a class="done-open pulls-open" href="${escapeHtml(pull.url)}" target="_blank" rel="noopener">
         <md-icon class="${state.className}" title="${state.text}">${state.icon}</md-icon>
         <span class="duplicate-title">${escapeHtml(pull.title)}</span>
-        <span class="duplicate-ref">${escapeHtml(pull.repo)}#${pull.number} · @${escapeHtml(pull.author)} · ${openPullAgeText(pull.createdAt)}</span>
+        <span class="duplicate-ref">${escapeHtml(displayRepo(pull.repo))}#${pull.number} · @${escapeHtml(pull.author)} · ${openPullAgeText(pull.createdAt)}</span>
       </a>
       <span class="pulls-issues">${alertChip}${issueLinks}</span>
     </div>`;

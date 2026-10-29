@@ -76,16 +76,16 @@ appears when an expected label is missing from the repository. The **+ Add**
 button on the main page creates an issue (default repository: `roadmap`) in
 Unassigned and opens it in the side panel. Cards show their labels in their
 GitHub colors, without the text before the ":" (for example "Spec'd" for
-"Flow : Spec'd"). Cards are moved by dragging them between columns. Below a divider,
-a card shows its assignees, its comment count (hidden when 0), the linked pull
-request icon and the last update time as on GitHub ("Updated 3 days ago", then an
-absolute date after 30 days). Columns on every page are sorted by last update, most
+"Flow : Spec'd"). Cards are moved by dragging them between columns. Repository names are shown without the `pankosmia/` prefix. Below a divider,
+a card shows the last update time as on GitHub ("Updated 3 days ago", then an
+absolute date after 30 days) on the left, and on the right (from right to left) its
+assignees, its comment count (hidden when 0) and the linked pull request icon. Columns on every page are sorted by last update, most
 recent first. The **Subissues (done/total)** button, with a thin progress bar along its bottom edge, expands the
-subissues in the manual order stored on GitHub (loaded when the list opens). Each
+subissues in the manual order stored on GitHub (loaded in the background after the board, when signed in, so a list opens in its final order). Each
 row shows its status icon (closed ones are dimmed), reference and assignees, and
 nested subissues appear indented under their parent; clicking a row opens it in the
 side panel (closed subissues too; they stay off the board). With a token, the drag handle (or the up and down arrow keys when it is
-focused) reorders siblings live and saves the new priority on GitHub, and
+focused) reorders siblings and saves the new priority on GitHub, and
 **Add subissue** opens the Create issue panel with the parent already set (and its
 repository selected); the new issue is linked under the parent when it is created.
 Moving an issue replaces all of its existing `Version : ...`
@@ -100,8 +100,8 @@ rows snap to the nearest row, so the target does not flicker. Over a whole card,
 for a moment (or press Shift) to arm it; a fill sweeps across the card meanwhile, and
 a drop before that just moves the card to the column. A tooltip below the pointer says
 what the drop does; the dragged issue is shown as a small label. While reordering
-siblings, the dragged row stays in the list as an outlined placeholder and the tooltip
-says "Release to put #N here". A subissue dropped on its own parent card stays where it
+siblings, the dragged row is dimmed, the same line and band show where it will land
+and the tooltip says "Put #N here"; the order is saved on drop. A subissue dropped on its own parent card stays where it
 is. Dropping a subissue on a
 column removes it from its parent and moves it there (on a version page it also gets
 that page's Version label). Every hierarchy change shows an **Undo** snackbar.

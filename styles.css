@@ -523,6 +523,8 @@ button.issue-title:hover {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: none;
+  margin-left: auto;
   color: var(--md-sys-color-on-surface-variant);
   font: var(--md-type-label-medium);
 }
@@ -542,6 +544,11 @@ button.issue-title:hover {
   padding-right: 6px;
 }
 
+/* The overlap padding would otherwise leave a gap at the right edge of the footer. */
+.card-stats .avatars {
+  margin-right: -6px;
+}
+
 .avatar {
   width: 24px;
   height: 24px;
@@ -558,7 +565,8 @@ button.issue-title:hover {
   position: relative;
   display: inline-flex;
   border-radius: 16px;
-  overflow: hidden;
+  /* clip-path also clips the button's animated layers (ripple, focus ring), which overflow: hidden can let through. */
+  clip-path: inset(0 round 16px);
 }
 
 .subissues-toggle {
@@ -571,17 +579,14 @@ button.issue-title:hover {
   --md-filled-tonal-button-icon-size: 18px;
 }
 
-/* The progress bar is the bottom edge of the button. */
+/* The progress bar is the bottom edge of the button: a plain element, with no animation of its own. */
 .subissues-progress {
-  --md-linear-progress-track-height: 3px;
-  --md-linear-progress-active-indicator-height: 3px;
-  --md-linear-progress-track-shape: 0;
-  --md-linear-progress-active-indicator-color: var(--md-sys-color-primary);
-  --md-linear-progress-track-color: color-mix(in srgb, var(--md-sys-color-primary) 20%, transparent);
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
+  height: 3px;
+  background: linear-gradient(to right, var(--md-sys-color-primary) calc(var(--progress) * 100%), color-mix(in srgb, var(--md-sys-color-primary) 20%, transparent) 0);
   pointer-events: none;
 }
 
@@ -594,17 +599,10 @@ button.issue-title:hover {
   border-left: 2px solid var(--md-sys-color-outline-variant);
 }
 
-/* While reordering, the dragged subissue is the target: it shows where it will land. */
-.subissue-node.dragging > .subissue-row {
-  border-radius: 8px;
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: -2px;
-  background: color-mix(in srgb, var(--md-sys-color-primary) 14%, transparent);
-}
-
-.subissue-node.dragging > .subissue-row > .subissue-item,
+/* The dragged subissue is dimmed; the drop line shows where it will land. */
+.subissue-node.dragging > .subissue-row,
 .subissue-node.dragging > .subissue-children {
-  opacity: .6;
+  opacity: .45;
 }
 
 .subissue-row {
@@ -790,17 +788,18 @@ button.issue-title:hover {
 
 .card-footer {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   margin: 8px -8px 0;
   padding: 8px 8px 8px;
   border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
-.card-stats:has(.avatars, .stat, .dev-trigger) + .last-updated {
-  margin-top: 6px;
-}
-
 .last-updated {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--md-sys-color-on-surface-variant);
   font: var(--md-type-label-small);
 }

@@ -24,8 +24,8 @@ function beginDrag(kind, issue, node) {
   endDrag();
   const rootId = Number(node?.closest(".issue-card")?.dataset.issueId) || 0;
   dragState = {
-    kind, issue, node, rootId, key: "", armed: false, timer: 0, expandTimer: 0, 
-    plan: null, shown: "", reordered: false, committed: false, line: null, lineTarget: null, lastY: null, dir: 0,
+    kind, issue, node, rootId, key: "", armed: false, timer: 0, expandTimer: 0,
+    plan: null, shown: "", line: null, lineTarget: null,
   };
   dragHint = document.createElement("div");
   dragHint.className = "drag-hint";
@@ -54,8 +54,7 @@ function endDrag() {
   dragHint?.remove();
   dragHint = null;
   state.node?.classList.remove("dragging");
-  if (state.reordered && !state.committed) refreshAllSubissueSections();
-  else flushSubissueRefreshes();
+  flushSubissueRefreshes();
 }
 
 function clearIndicators() {
@@ -146,8 +145,10 @@ function rowCandidate(event, row, rootId, forcedZone = "") {
     }
     zone = ratio < edge ? "before" : "after";
   }
-  if (sameGroup) return { type: "reorder", key: "reorder", node, zone, el: row };
-  return insertCandidate(parent, issue, node, zone, row, rootId);
+  const target = insertCandidate(parent, issue, node, zone, row, rootId);
+  // Between siblings it is a reorder. The bottom edge of a row that has subissues points into that row's list instead.
+  if (sameGroup && target.parent.id === parent.id) return { ...target, type: "reorder", key: `reorder:${target.anchor.id}:${target.zone}` };
+  return target;
 }
 
 function nearestRowCandidate(event, list, rootId) {
@@ -200,16 +201,6 @@ function startDwell(drag, candidate) {
   }
 }
 
-// Only a swap in the direction the pointer is travelling is applied, so a swap that shifts the layout
-// under the pointer can never trigger the opposite swap by itself.
-function liveReorder(drag, candidate) {
-  const { node, zone } = candidate;
-  if ((zone === "before" && drag.dir > 0) || (zone === "after" && drag.dir < 0)) return;
-  if (zone === "before" && node.previousElementSibling !== drag.node) node.before(drag.node);
-  else if (zone === "after" && node.nextElementSibling !== drag.node) node.after(drag.node);
-  drag.reordered = true;
-}
-
 function hintText(candidate, active, reason, event) {
   const drag = dragState;
   const source = `#${drag.issue.number}`;
@@ -219,7 +210,7 @@ function hintText(candidate, active, reason, event) {
   if (reason) return reason;
   if (active?.type === "nest") return `Move ${source} under #${active.parent.number}`;
   if (active?.type === "insert") return `Insert ${source} in the subissues of #${active.parent.number}`;
-  if (active?.type === "reorder") return `Release to put ${source} here`;
+  if (active?.type === "reorder") return `Put ${source} here`;
   if (active) return "";
   const column = event.target instanceof Element ? event.target.closest(".column") : null;
   if (column && drag.kind === "subissue" && drag.issue.parent_issue_url) {
@@ -241,7 +232,7 @@ function positionDropLine(drag) {
 function showIndicators(candidate, active, reason, event) {
   const drag = dragState;
   const text = hintText(candidate, active, reason, event);
-  const signature = [candidate?.key, Boolean(active), reason, text, active?.type === "insert" ? active.zone : ""].join("|");
+  const signature = [candidate?.key, Boolean(active), reason, text].join("|");
   if (dragHint) {
     dragHint.style.left = `${event.clientX + 16}px`;
     dragHint.style.top = `${event.clientY + 16}px`;
@@ -254,7 +245,7 @@ function showIndicators(candidate, active, reason, event) {
   if (candidate && !active) candidate.el.classList.add("drop-candidate");
   else if (reason) candidate.el.classList.add("drop-invalid");
   else if (active?.type === "nest") active.el.classList.add("drop-target");
-  else if (active?.type === "insert") {
+  else if (active?.type === "insert" || active?.type === "reorder") {
     drag.line = document.createElement("div");
     drag.line.className = "drop-line";
     drag.lineTarget = active;
@@ -275,8 +266,6 @@ function showIndicators(candidate, active, reason, event) {
 function evaluate(event) {
   const drag = dragState;
   drag.lastEvent = event;
-  if (drag.lastY !== null && event.clientY !== drag.lastY) drag.dir = event.clientY > drag.lastY ? 1 : -1;
-  drag.lastY = event.clientY;
   const candidate = dragCandidate(event);
   const key = candidate ? candidate.key : "";
   if (key !== drag.key) {
@@ -288,7 +277,6 @@ function evaluate(event) {
   }
   if (candidate && event.shiftKey) drag.armed = true;
   const active = candidate && (drag.armed || !needsDwell(candidate)) ? candidate : null;
-  if (active?.type === "reorder") liveReorder(drag, active);
   const reason = active ? invalidReason(active) : "";
   drag.plan = active && !reason ? active : null;
   // Over its own parent card a subissue never falls back to the column drop, which would take it out of its parent.
@@ -336,14 +324,13 @@ dropBoard.addEventListener("drop", (event) => {
     endDrag();
     return;
   }
-  if (!active || active.type === "reorder" || active.type === "self" || active.type === "hold") {
-    if (drag.reordered) {
-      drag.committed = true;
-      commitReorder(drag.node.closest(".subissues"), drag.node);
-    }
-  } else if (active.type === "nest") {
+  // Over itself, or over its own parent card, a subissue stays where it is.
+  if (active && active.type === "reorder") {
+    if (active.node !== drag.node) active.node[active.zone === "before" ? "before" : "after"](drag.node);
+    commitReorder(drag.node.closest(".subissues"), drag.node);
+  } else if (active && active.type === "nest") {
     nestIssue(drag.issue, active.parent, null, active.rootId);
-  } else {
+  } else if (active && active.type === "insert") {
     nestIssue(drag.issue, active.parent, { [active.zone === "before" ? "before_id" : "after_id"]: active.anchor.id }, active.rootId);
   }
   endDrag();
@@ -359,24 +346,64 @@ function adjustSummary(parentUrl, total, completed) {
   target.sub_issues_summary = next;
 }
 
-// Mirrors a parent change on the loaded issues; the cached subissue orders are reloaded from GitHub when needed.
-function changeParentLocal(issue, oldUrl, newUrl) {
+// Forgets the cached order of a parent and of the parents above it, so that it is fetched again.
+function forgetOrders(parentUrl) {
+  let current = issues.find((item) => item.url === parentUrl);
+  if (!current) {
+    subIssueOrders.clear();
+    return;
+  }
+  const seen = new Set();
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    subIssueOrders.delete(current.id);
+    current = issues.find((item) => item.url === current.parent_issue_url);
+  }
+}
+
+// Keeps the cached orders in step with a move, so that the lists show the new order without waiting for GitHub.
+function moveInOrders(issue, oldUrl, newUrl, position) {
+  const oldParent = oldUrl && issues.find((item) => item.url === oldUrl);
+  const oldOrder = oldParent && subIssueOrders.get(oldParent.id);
+  if (oldOrder) subIssueOrders.set(oldParent.id, oldOrder.filter((item) => item.id !== issue.id));
+  const newParent = newUrl && issues.find((item) => item.url === newUrl);
+  const newOrder = newParent && subIssueOrders.get(newParent.id);
+  if (!newOrder) return;
+  const next = newOrder.filter((item) => item.id !== issue.id);
+  let index = next.length;
+  if (position) {
+    const at = next.findIndex((item) => item.id === (position.before_id ?? position.after_id));
+    if (at >= 0) index = position.before_id ? at : at + 1;
+  }
+  next.splice(index, 0, { ...issue, parent_issue_url: newUrl });
+  subIssueOrders.set(newParent.id, next);
+}
+
+// Mirrors a parent change on the loaded issues and in the cached subissue orders.
+function changeParentLocal(issue, oldUrl, newUrl, position = null) {
   const done = isClosed(issue) ? 1 : 0;
   if (oldUrl) adjustSummary(oldUrl, -1, -done);
   if (newUrl) adjustSummary(newUrl, 1, done);
   for (const item of [issues.find((entry) => entry.id === issue.id), issue]) {
     if (item) item.parent_issue_url = newUrl;
   }
-  subIssueOrders.clear();
+  moveInOrders(issue, oldUrl, newUrl, position);
 }
 
 function redrawAfterRelationChange() {
   saveIssuesCache();
   renderBoard();
   summary.textContent = summaryText();
+  preloadSubIssueOrders();
   // Forces the side panel to reload the relationships of the issue it shows.
   panelExtras.key = "";
   refreshPanel();
+}
+
+// Hierarchy changes are sent one at a time; a drop made while one is running is not queued.
+const BUSY_MESSAGE = "Another change is still being saved. Try again in a moment.";
+function showBusyNotice() {
+  showNotice(BUSY_MESSAGE, true);
 }
 
 async function nestIssue(issue, parent, position = null, rootId = null) {
@@ -384,7 +411,10 @@ async function nestIssue(issue, parent, position = null, rootId = null) {
     openAuthDialog();
     return;
   }
-  if (relationBusy) return;
+  if (relationBusy) {
+    showBusyNotice();
+    return;
+  }
   relationBusy = true;
   notice.hidden = true;
   const oldUrl = issue.parent_issue_url || null;
@@ -392,12 +422,15 @@ async function nestIssue(issue, parent, position = null, rootId = null) {
   try {
     if (oldUrl !== parent.url) {
       await sendRelationRequest("POST", `${parent.url}/sub_issues`, { sub_issue_id: issue.id, replace_parent: true });
-      changeParentLocal(issue, oldUrl, parent.url);
+      changeParentLocal(issue, oldUrl, parent.url, position);
       linked = true;
+    } else if (position) {
+      moveInOrders(issue, oldUrl, parent.url, position);
     }
     if (position) await sendRelationRequest("PATCH", `${parent.url}/sub_issues/priority`, { sub_issue_id: issue.id, ...position });
   } catch (error) {
     showNotice(`Could not move #${issue.number} under #${numberFromUrl(parent.url)}: ${apiErrorMessage(error)}`, true);
+    forgetOrders(parent.url);
     if (!linked) {
       relationBusy = false;
       return;
@@ -406,12 +439,17 @@ async function nestIssue(issue, parent, position = null, rootId = null) {
   relationBusy = false;
   if (rootId) expandedSubissues.add(rootId);
   redrawAfterRelationChange();
+  // The notice about the ignored drop must not hide the Undo of the change that has just finished.
+  if (notice.textContent === BUSY_MESSAGE) notice.hidden = true;
   const undo = oldUrl ? () => nestIssue(issue, parentByUrl(oldUrl)) : () => unnestIssue(issue, parent.url);
   if (notice.hidden) showUndo(`Moved #${issue.number} under #${numberFromUrl(parent.url)}.`, undo);
 }
 
 async function unnestIssue(issue, parentUrl) {
-  if (relationBusy) return false;
+  if (relationBusy) {
+    showBusyNotice();
+    return false;
+  }
   relationBusy = true;
   notice.hidden = true;
   try {
