@@ -527,8 +527,12 @@ function createIssueCard(issue) {
 
   const repository = displayRepo(repoOf(issue).join("/"));
   const number = issue.number;
-  const labels = issue.labels
-    .filter((label) => !isVersionLabel(label.name) && !(detailVersion && isFlowLabel(label.name)))
+  // Version and Flow are the columns; Meta goes top-right and Blocked is an icon before the title.
+  const shown = issue.labels.filter(
+    (label) => !isVersionLabel(label.name) && !hasPrefix(label.name, "Blocked") && !(detailVersion && isFlowLabel(label.name))
+  );
+  const metaChips = shown.filter((label) => hasPrefix(label.name, "Meta")).map(labelChipHtml).join("");
+  const labels = sortCardLabels(shown.filter((label) => !hasPrefix(label.name, "Meta")))
     .map(labelChipHtml)
     .join("");
 
@@ -537,8 +541,9 @@ function createIssueCard(issue) {
       ${statusIconHtml(issue)}
       <span class="repo-name" title="${escapeHtml(repository)}">${escapeHtml(repository)}</span>
       <span class="issue-number">#${number}</span>
+      ${metaChips ? `<span class="issue-meta-labels" aria-label="Issue markers">${metaChips}</span>` : ""}
     </div>
-    <button class="issue-title" type="button">${escapeHtml(issue.title)}</button>
+    <button class="issue-title" type="button">${blockedIconHtml(issue)}${escapeHtml(issue.title)}</button>
     ${labels ? `<div class="issue-labels" aria-label="Issue labels">${labels}</div>` : ""}
     ${cardFooterHtml(issue)}
   `;
@@ -1261,6 +1266,33 @@ function labelChipHtml(label) {
   const color = /^[0-9a-f]{6}$/i.test(label.color || "") ? label.color : "";
   const style = color ? ` style="background:#${color};border-color:#${color};color:${textColorFor(color)}"` : "";
   return `<span class="label-chip"${style} title="${escapeHtml(label.name)}">${escapeHtml(labelValue(label.name))}</span>`;
+}
+
+// Card chips always follow this order: Type, Stack, Priority, then the other labels.
+const CARD_LABEL_GROUPS = ["Type", "Stack", "Priority"];
+
+function cardLabelRank(label) {
+  const group = CARD_LABEL_GROUPS.findIndex((prefix) => hasPrefix(label.name, prefix));
+  if (group === -1) return [CARD_LABEL_GROUPS.length, 0];
+  const order = GROUP_ORDER[CARD_LABEL_GROUPS[group]] || [];
+  const index = order.indexOf(labelValue(label.name));
+  return [group, index === -1 ? order.length : index];
+}
+
+function sortCardLabels(labels) {
+  return [...labels].sort((a, b) => {
+    const [groupA, indexA] = cardLabelRank(a);
+    const [groupB, indexB] = cardLabelRank(b);
+    return groupA - groupB || indexA - indexB || a.name.localeCompare(b.name);
+  });
+}
+
+function blockedIconHtml(issue) {
+  const blocked = issue.labels.filter((label) => hasPrefix(label.name, "Blocked"));
+  if (blocked.length === 0) return "";
+  const reason = blocked.map((label) => labelValue(label.name)).join(", ");
+  const text = reason.toLowerCase() === "blocked" ? "Blocked" : `Blocked: ${reason}`;
+  return `<md-icon class="blocked-icon" role="img" title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}">dangerous</md-icon>`;
 }
 
 function repoOf(issue) {

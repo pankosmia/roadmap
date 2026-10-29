@@ -470,6 +470,19 @@ h1 {
   font: var(--md-type-label-small);
 }
 
+.issue-meta-labels {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.blocked-icon {
+  --md-icon-size: 18px;
+  margin-right: 4px;
+  color: var(--md-sys-color-error);
+  vertical-align: text-bottom;
+}
+
 .repo-name {
   max-width: 70%;
   overflow: hidden;
