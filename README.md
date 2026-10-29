@@ -29,11 +29,27 @@ GitHub). Once connected, the panel lets you:
   again to clear) in single-row connected button groups;
 - see the linked pull requests and branches (Development, read-only). Pull
   request icons use the issue colors: green open, purple merged, gray draft,
-  red closed without merging. Cards and the Done dialog show one icon (merged,
+  red closed without merging. Cards and the Archives dialog show one icon (merged,
   then open, draft, closed) with the number of linked pull requests; clicking it
   lists each pull request with its own icon and a link (needs a connected token);
 - manage Parent, Sub-issues, Blocked by and Blocking relationships, searching
   issues across the whole organization, from the Relationships heading.
+
+Closing an issue (Close button, Flow menu or moving it to Done) shows a snackbar
+with **Undo**, which reopens it with its previous labels (and deletes the
+"Duplicate of …" comment when it was closed as duplicate). On Next and Current
+pages a closed issue gets the `Flow : Done` label and stays in the Done column
+(moving a card into Done closes it, moving a closed card out reopens it; the column
+reminds it at the bottom). The main page shows open issues only. Reopening with the
+panel button keeps `Flow : Done`. An issue closed with a Backlog or Unassigned
+Version goes straight to the archives, and the snackbar says so.
+
+The **Archives** button (main and version pages) opens the **Archived issues (N)**
+dialog. An issue is archived 30 days after it was closed, or, when it is still open
+in the Done flow of Next or Current, 30 days after its last update; an issue closed
+with a Backlog or Unassigned Version is archived at once. Archived issues are loaded
+from GitHub 100 at a time, with a **Load 100 more** button at the end of the list
+(GitHub search returns at most 1,000 issues per query).
 
 Type and Stack are always marked with `*`, and their last selected choice cannot
 be deselected. Existing issues without these labels are left as they are. When
@@ -81,7 +97,7 @@ differ from the view that was active before they were touched: the default view,
 or the saved view that was applied. Filters and views are stored in the browser's
 local storage (`roadmap-filters`) and shared by all pages.
 
-The **Pull requests** button, to the right of **Done** (main and version pages),
+The **Pull requests** button, to the right of **Archives** (main and version pages),
 opens a dialog listing every open pull request of the organization (`open-pulls.js`,
 one paginated GraphQL search, loaded with the board and cached for 5 minutes,
 **Refresh** to reload; needs a connected token). Each row shows the state icon,
@@ -99,7 +115,7 @@ Hours are calendar hours (thresholds are constants in `open-pulls.js`):
   (or no review at all) for 48 hours or more, counted from the last review request or
   "ready for review" event, or from its creation.
 
-On cards and in the Done dialog, the linked pull request count is a filled badge
+On cards and in the Archives dialog, the linked pull request count is a filled badge
 in the color of the pull request state.
 
 The UI follows the Material 3 design system. Components come from

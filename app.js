@@ -8,6 +8,7 @@ const VERSION_LABELS = new Map(VERSIONS.map((version) => [version, `Version : ${
 const FLOWS = ["No Spec", "UI Design", "Spec'ing", "Spec'd", "Implement Now", "Implementing", "Reviewing", "Done"];
 const BACKLOG_FLOWS = FLOWS.slice(0, 4);
 const DEFAULT_FLOW = "No Spec";
+const DONE_FLOW = "Done";
 const DETAIL_VERSIONS = ["Backlog", "Next", "Current"];
 const requestedVersion = new URLSearchParams(window.location.search).get("version");
 const detailVersion = document.body.dataset.page === "detail" && DETAIL_VERSIONS.includes(requestedVersion) ? requestedVersion : "";
@@ -169,7 +170,9 @@ function readIssuesCache() {
 
 function saveIssuesCache() {
   try {
-    sessionStorage.setItem(ISSUES_CACHE_KEY, JSON.stringify({ time: Date.now(), issues }));
+    // Archived issues are loaded on demand and are not cached.
+    const archivedIds = new Set(archive.ids);
+    sessionStorage.setItem(ISSUES_CACHE_KEY, JSON.stringify({ time: Date.now(), issues: issues.filter((issue) => !archivedIds.has(issue.id)) }));
   } catch {
     // Storage may be unavailable or full; the board then reloads on each page view.
   }
@@ -194,6 +197,7 @@ async function loadIssues({ force = false } = {}) {
   const cached = force ? null : readIssuesCache();
   if (cached) {
     issues = cached.issues;
+    resetArchive();
     await loadColumnLabelColors();
     renderBoard();
     refreshPanel();
@@ -213,7 +217,7 @@ async function loadIssues({ force = false } = {}) {
     const { items: openIssues, totalCount } = await searchAllIssues("is:open");
     let closedIssues = [];
     try {
-      closedIssues = (await searchAllIssues("is:closed")).items;
+      closedIssues = (await searchAllIssues(`is:closed closed:>=${archiveCutoff()} ${DONE_VERSION_QUERY}`)).items;
     } catch (error) {
       if (!cached) showNotice(`Closed issues could not be loaded: ${apiErrorMessage(error)}`, true);
     }
@@ -225,6 +229,7 @@ async function loadIssues({ force = false } = {}) {
       if (previousPulls.has(issue.id)) issue.pulls = previousPulls.get(issue.id);
     }
     issues = results;
+    resetArchive();
     saveIssuesCache();
     loadFailed = false;
     await loadColumnLabelColors();
@@ -293,6 +298,7 @@ function isFlowLabel(labelName) {
 }
 
 function issueFlow(issue) {
+  if (isClosed(issue)) return DONE_FLOW;
   for (const flow of FLOWS) {
     if (issue.labels.some((label) => label.name === flowLabelName(flow))) return flow;
   }
@@ -324,7 +330,7 @@ function subIssuesOf(parent) {
 }
 
 function isNestedSubIssue(issue) {
-  return Boolean(issue.parent_issue_url) && issues.some((item) => item.url === issue.parent_issue_url);
+  return Boolean(issue.parent_issue_url) && issues.some((item) => item.url === issue.parent_issue_url && isOnBoard(item));
 }
 
 function matchesText(issue) {
@@ -402,6 +408,9 @@ function renderBoard() {
     column.addEventListener("dragleave", onDragLeave);
     column.addEventListener("drop", onDrop);
     const issueList = column.querySelector(".issue-list");
+    if (version === DONE_FLOW && DONE_VERSIONS.includes(detailVersion)) {
+      column.insertAdjacentHTML("beforeend", '<p class="column-hint">Drag an issue here to close it.</p>');
+    }
 
     if (columnIssues.length === 0) {
       issueList.innerHTML = '<p class="empty-column"><md-icon>inbox</md-icon>No issues</p>';
@@ -460,7 +469,6 @@ function createIssueCard(issue) {
     ${labels ? `<div class="issue-labels" aria-label="Issue labels">${labels}</div>` : ""}
     ${cardStats(issue)}
     <div class="card-footer">
-      ${pendingClosures.has(issue.id) ? '<md-text-button class="undo-close-button" type="button" data-issue-id="${issue.id}">${undoLabel(issue)}</md-text-button>' : ""}
       <md-text-button class="move-button" data-issue-id="${issue.id}" trailing-icon aria-label="Move issue #${number} to ${detailVersion ? "stage" : "version"}" ${accessToken ? "" : "disabled"}>
         Move to
         <md-icon slot="icon">arrow_drop_down</md-icon>
@@ -488,7 +496,6 @@ function createIssueCard(issue) {
   }
 
   card.querySelector(".issue-title").addEventListener("click", () => openPanel(issue));
-  card.querySelector(".undo-close-button")?.addEventListener("click", () => reopenIssue(issue));
   const moveButton = card.querySelector(".move-button");
   moveButton.addEventListener("click", () => openMoveMenu(issue, moveButton));
   return card;
@@ -616,11 +623,14 @@ async function moveIssue(issue, version) {
 
   const [owner, repository] = issue.repository_url.split("/").slice(-2);
   let labels;
+  let stateChange = {};
   if (detailVersion) {
     labels = issue.labels
       .map((label) => label.name)
       .filter((labelName) => !isFlowLabel(labelName));
     labels.push(flowLabelName(version));
+    if (version === DONE_FLOW) stateChange = { state: "closed", state_reason: "completed" };
+    else if (isClosed(issue)) stateChange = { state: "open", state_reason: "reopened" };
   } else {
     labels = issue.labels
       .map((label) => label.name)
@@ -641,7 +651,7 @@ async function moveIssue(issue, version) {
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ labels })
+        body: JSON.stringify({ labels, ...stateChange })
       },
       accessToken
     );
@@ -651,26 +661,26 @@ async function moveIssue(issue, version) {
     renderBoard();
     summary.textContent = summaryText();
     refreshPanel();
-    showUndo(updated, previous);
+    showUndo(`Moved #${updated.number} to ${issueColumn(updated)}.`, () => moveIssue(updated, previous));
   } catch (error) {
     showNotice(`Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`, true);
     renderBoard();
   }
 }
 
-function showUndo(issue, previousColumn) {
+function showUndo(message, undo) {
   clearTimeout(undoTimer);
   document.querySelector(".snackbar")?.remove();
   const toast = document.createElement("div");
   toast.className = "snackbar";
   toast.setAttribute("role", "status");
   const text = document.createElement("span");
-  text.textContent = `Moved #${issue.number} to ${issueColumn(issue)}.`;
+  text.textContent = message;
   const button = document.createElement("md-text-button");
   button.textContent = "Undo";
   button.addEventListener("click", () => {
     toast.remove();
-    moveIssue(issue, previousColumn);
+    undo();
   });
   toast.append(text, button);
   document.body.append(toast);
@@ -695,43 +705,31 @@ function showNotice(message, isError = false, action = null) {
   notice.hidden = false;
 }
 
-const CLOSE_UNDO_MS = 30000;
 const ARCHIVE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
-const pendingClosures = new Map();
-let countdownTimer = 0;
+// Closed issues of these versions stay in the Done column until they are archived.
+const DONE_VERSIONS = ["Next", "Current"];
+const DONE_VERSION_QUERY = `label:${DONE_VERSIONS.map((version) => `"${VERSION_LABELS.get(version)}"`).join(",")}`;
+const NOT_DONE_VERSION_QUERY = DONE_VERSIONS.map((version) => `-label:"${VERSION_LABELS.get(version)}"`).join(" ");
 
-function pendingSeconds(issue) {
-  const pending = pendingClosures.get(issue.id);
-  return pending ? Math.max(0, Math.ceil((pending.deadline - Date.now()) / 1000)) : 0;
-}
-
-function undoLabel(issue) {
-  return `Undo close (${pendingSeconds(issue)}s)`;
-}
-
-function tickCountdown() {
-  if (pendingClosures.size === 0) {
-    clearInterval(countdownTimer);
-    countdownTimer = 0;
-    return;
-  }
-  for (const issue of issues) {
-    if (!pendingClosures.has(issue.id)) continue;
-    const label = undoLabel(issue);
-    document.querySelectorAll(`.undo-close-button[data-issue-id="${issue.id}"]`).forEach((button) => {
-      button.textContent = label;
-    });
-    if (panelElements && panelIssueId === issue.id) panelElements.reopenButton.textContent = label;
-  }
+function archiveCutoff() {
+  return new Date(Date.now() - ARCHIVE_AFTER_MS).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 function isClosed(issue) {
   return issue.state === "closed";
 }
 
-// A freshly closed issue stays on the board until its undo window ends.
+// An issue is archived 30 days after closing (or after its last update, when it is open in the Done flow),
+// or at once when it is closed and its version has no Done column.
+function isArchived(issue) {
+  if (!DONE_VERSIONS.includes(issueVersion(issue))) return isClosed(issue);
+  if (issueFlow(issue) !== DONE_FLOW) return false;
+  return Date.now() - Date.parse(isClosed(issue) ? issue.closed_at : issue.updated_at) > ARCHIVE_AFTER_MS;
+}
+
+// Only version pages have a Done column, so the main board shows open issues only.
 function isOnBoard(issue) {
-  return !isClosed(issue) || pendingClosures.has(issue.id);
+  return !isArchived(issue) && (!isClosed(issue) || Boolean(detailVersion));
 }
 
 function issueStatus(issue) {
@@ -746,21 +744,11 @@ function statusIconHtml(issue) {
   return `<md-icon class="status-icon status-${status.key}" role="img" title="${status.label}" aria-label="${status.label}">${status.icon}</md-icon>`;
 }
 
-function clearPendingClosure(issue) {
-  clearTimeout(pendingClosures.get(issue.id)?.timer);
-  pendingClosures.delete(issue.id);
-}
-
-function startPendingClosure(issue) {
-  clearPendingClosure(issue);
-  const timer = setTimeout(() => {
-    pendingClosures.delete(issue.id);
-    renderBoard();
-    summary.textContent = summaryText();
-    refreshPanel();
-  }, CLOSE_UNDO_MS);
-  pendingClosures.set(issue.id, { timer, deadline: Date.now() + CLOSE_UNDO_MS });
-  if (!countdownTimer) countdownTimer = setInterval(tickCountdown, 1000);
+// Closing moves an issue to the Done flow; only versions with a Done column get the label.
+function labelsForClose(issue) {
+  const names = issue.labels.map((label) => label.name);
+  if (!DONE_VERSIONS.includes(issueVersion(issue))) return names;
+  return [...names.filter((name) => !isFlowLabel(name)), flowLabelName(DONE_FLOW)];
 }
 
 function issueEndpoint(issue) {
@@ -768,7 +756,7 @@ function issueEndpoint(issue) {
   return `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/${issue.number}`;
 }
 
-async function changeIssueState(issue, body, duplicateOf = null) {
+async function changeIssueState(issue, body, { duplicateOf = null, undoLabels = null } = {}) {
   if (!accessToken) {
     openAuthDialog();
     return false;
@@ -779,8 +767,9 @@ async function changeIssueState(issue, body, duplicateOf = null) {
   stateChangeBusy = true;
   refreshPanel();
   try {
+    let commentId = null;
     if (duplicateOf) {
-      await githubRequest(
+      const comment = await githubRequest(
         `${issueEndpoint(issue)}/comments`,
         {
           method: "POST",
@@ -789,6 +778,7 @@ async function changeIssueState(issue, body, duplicateOf = null) {
         },
         accessToken
       );
+      commentId = comment.id;
     }
     const updated = await githubRequest(
       issueEndpoint(issue),
@@ -796,11 +786,13 @@ async function changeIssueState(issue, body, duplicateOf = null) {
       accessToken
     );
     const merged = mergeUpdatedIssue(issue, updated);
-    if (isClosed(merged)) startPendingClosure(merged);
-    else clearPendingClosure(merged);
     saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
+    if (undoLabels) {
+      const message = isArchived(merged) ? `Closed #${merged.number} and moved to the archives.` : `Closed #${merged.number}.`;
+      showUndo(message, () => undoClose(merged, undoLabels, commentId));
+    }
     return true;
   } catch (error) {
     const message = `Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`;
@@ -813,12 +805,36 @@ async function changeIssueState(issue, body, duplicateOf = null) {
   }
 }
 
-function closeIssue(issue, reason, duplicateOf = null) {
-  return changeIssueState(issue, { state: "closed", state_reason: reason }, duplicateOf);
+async function closeIssue(issue, reason, duplicateOf = null) {
+  // Wait for queued label changes so that the Done flow is not overwritten by an older save.
+  await runIssueSave(issue);
+  const current = issues.find((item) => item.id === issue.id) || issue;
+  const undoLabels = current.labels.map((label) => label.name);
+  return changeIssueState(
+    current,
+    { state: "closed", state_reason: reason, labels: labelsForClose(current) },
+    { duplicateOf, undoLabels }
+  );
 }
 
-function reopenIssue(issue) {
-  return changeIssueState(issue, { state: "open", state_reason: "reopened" });
+// Undoing a close as duplicate also deletes the "Duplicate of …" comment that was added.
+async function undoClose(issue, labels, commentId) {
+  if (!(await reopenIssue(issue, labels)) || !commentId) return;
+  const [owner, repository] = repoOf(issue);
+  try {
+    await githubRequest(
+      `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/comments/${commentId}`,
+      { method: "DELETE" },
+      accessToken
+    );
+  } catch (error) {
+    showNotice(`#${issue.number} was reopened, but its duplicate comment could not be deleted: ${apiErrorMessage(error)}`, true);
+  }
+}
+
+// Without labels, the issue keeps its current ones (so a reopened issue stays in the Done flow).
+function reopenIssue(issue, labels = null) {
+  return changeIssueState(issue, { state: "open", state_reason: "reopened", ...(labels ? { labels } : {}) });
 }
 
 let stateChangeBusy = false;
@@ -876,7 +892,7 @@ function renderStatusControls(issue) {
   closeSplit.querySelector(".close-main").disabled = disabled;
   closeSplit.querySelector(".close-menu-toggle").disabled = disabled;
   reopenButton.disabled = disabled;
-  reopenButton.textContent = pendingClosures.has(issue.id) ? undoLabel(issue) : "Reopen issue";
+  reopenButton.textContent = "Reopen issue";
 }
 
 function ensureDuplicateDialog() {
@@ -948,87 +964,165 @@ function renderDuplicateResults() {
   }
 }
 
-let doneDialog = null;
-let doneTab = 0;
+// Archived issues are loaded 100 at a time when the dialog is used: closed outside a Done column, open in the Done flow
+// for 30 days, then closed for 30 days. GitHub search lists at most 1,000 results per query.
+const archive = { ids: [], buffer: [], sources: null, total: 0, loading: false, error: "" };
+let archiveDialog = null;
 
-function ensureDoneDialog() {
-  if (doneDialog) return doneDialog;
-  doneDialog = document.createElement("md-dialog");
-  doneDialog.className = "done-dialog";
-  doneDialog.innerHTML = `
-    <div slot="headline">Done</div>
+function resetArchive() {
+  archive.ids = [];
+  archive.buffer = [];
+  archive.sources = null;
+  archive.total = 0;
+  archive.error = "";
+  if (archiveDialog?.open) loadMoreArchive();
+}
+
+function searchPage(query, page, perPage = PAGE_SIZE) {
+  const q = encodeURIComponent(`org:${ORGANIZATION} is:issue ${query} sort:updated-desc`);
+  return githubRequest(`${API_ROOT}/search/issues?q=${q}&per_page=${perPage}&page=${page}`, {}, accessToken);
+}
+
+function archiveSourceDone(source) {
+  return source.total !== null && (source.empty || source.fetched >= Math.min(source.total, 1000));
+}
+
+function archiveHasMore() {
+  return archive.buffer.length > 0 || !archive.sources || archive.sources.some((source) => !archiveSourceDone(source));
+}
+
+async function fetchArchivePage(source) {
+  const result = await searchPage(source.query, source.page);
+  source.total = result.total_count;
+  source.page += 1;
+  source.fetched += result.items.length;
+  source.empty = result.items.length === 0;
+  return result.items;
+}
+
+async function loadMoreArchive() {
+  if (archive.loading) return;
+  archive.loading = true;
+  archive.error = "";
+  renderArchive();
+  try {
+    if (!archive.sources) {
+      const cutoff = archiveCutoff();
+      const queries = [
+        `is:closed closed:>=${cutoff} ${NOT_DONE_VERSION_QUERY}`,
+        `is:open label:"${flowLabelName(DONE_FLOW)}" ${DONE_VERSION_QUERY} updated:<${cutoff}`,
+        `is:closed closed:<${cutoff}`
+      ];
+      const sources = queries.map((query) => ({ query, page: 1, total: null, fetched: 0, empty: false }));
+      // The first source gets its total with its first page; the others only need their total count at first.
+      const counts = await Promise.all(sources.slice(1).map((source) => searchPage(source.query, 1, 1)));
+      counts.forEach((count, index) => {
+        sources[index + 1].total = count.total_count;
+      });
+      archive.sources = sources;
+    }
+    while (archive.buffer.length < PAGE_SIZE) {
+      const source = archive.sources.find((item) => !archiveSourceDone(item));
+      if (!source) break;
+      archive.buffer.push(...(await fetchArchivePage(source)));
+    }
+    archive.total = archive.sources.reduce((sum, source) => sum + source.total, 0);
+    for (const item of archive.buffer.splice(0, PAGE_SIZE)) {
+      if (archive.ids.includes(item.id)) continue;
+      if (!issues.some((issue) => issue.id === item.id)) issues.push(item);
+      archive.ids.push(item.id);
+    }
+    loadPullRequests();
+  } catch (error) {
+    archive.error = apiErrorMessage(error);
+  } finally {
+    archive.loading = false;
+    renderArchive();
+  }
+}
+
+// Called when an issue changes, so that an issue closed outside a Done column joins the list at once.
+function noteArchiveChange(issue) {
+  if (!archive.sources || !isArchived(issue) || archive.ids.includes(issue.id)) return;
+  archive.ids.unshift(issue.id);
+  archive.total += 1;
+}
+
+function archivedIssues() {
+  return archive.ids.map((id) => issues.find((issue) => issue.id === id)).filter((issue) => issue && isArchived(issue));
+}
+
+function ensureArchiveDialog() {
+  if (archiveDialog) return archiveDialog;
+  archiveDialog = document.createElement("md-dialog");
+  archiveDialog.className = "done-dialog";
+  archiveDialog.innerHTML = `
+    <div slot="headline">Archived issues</div>
     <div slot="content" class="done-content">
-      <md-tabs aria-label="Closed issues">
-        <md-primary-tab id="done-tab">Done</md-primary-tab>
-        <md-primary-tab id="archived-tab">Archived</md-primary-tab>
-      </md-tabs>
+      <p class="archive-note">Closed issues are automatically archived after 30 days.</p>
       <div class="done-list"></div>
     </div>
     <div slot="actions"><md-text-button class="done-close" type="button">Close</md-text-button></div>
   `;
-  document.body.append(doneDialog);
-  const tabs = doneDialog.querySelector("md-tabs");
-  tabs.addEventListener("change", () => {
-    doneTab = tabs.activeTabIndex;
-    renderDoneList();
-  });
-  doneDialog.querySelector(".done-close").addEventListener("click", () => doneDialog.close());
-  return doneDialog;
+  document.body.append(archiveDialog);
+  archiveDialog.querySelector(".done-close").addEventListener("click", () => archiveDialog.close());
+  return archiveDialog;
 }
 
-function closedIssueGroups() {
-  const now = Date.now();
-  const closed = issues
-    .filter((issue) => isClosed(issue) && !pendingClosures.has(issue.id))
-    .filter((issue) => !detailVersion || issueVersion(issue) === detailVersion)
-    .sort((a, b) => Date.parse(b.closed_at) - Date.parse(a.closed_at));
-  const isArchived = (issue) => now - Date.parse(issue.closed_at) > ARCHIVE_AFTER_MS;
-  return { done: closed.filter((issue) => !isArchived(issue)), archived: closed.filter(isArchived) };
-}
-
-function renderDoneList() {
-  const { done, archived } = closedIssueGroups();
-  const dialog = ensureDoneDialog();
-  dialog.querySelector("#done-tab").textContent = `Done (${done.length})`;
-  dialog.querySelector("#archived-tab").textContent = `Archived (${archived.length})`;
+function renderArchive() {
+  const dialog = ensureArchiveDialog();
+  const shown = archivedIssues();
+  const count = archive.sources ? archive.total - (archive.ids.length - shown.length) : null;
+  dialog.querySelector('[slot="headline"]').textContent = count === null ? "Archived issues" : `Archived issues (${count})`;
   const list = dialog.querySelector(".done-list");
-  const shown = doneTab === 0 ? done : archived;
+  const scrollTop = list.scrollTop;
   list.replaceChildren();
-  if (shown.length === 0) {
-    list.innerHTML = `<p class="duplicate-empty">${doneTab === 0 ? "No issue closed in the last 30 days." : "No archived issue."}</p>`;
-    return;
-  }
   for (const issue of shown) {
     const item = document.createElement("div");
     item.className = "duplicate-option done-row";
-    const closedOn = new Date(issue.closed_at).toLocaleDateString();
-    item.innerHTML = `<button type="button" class="done-open">${statusIconHtml(issue)}<span class="duplicate-title">${escapeHtml(issue.title)}</span><span class="duplicate-ref">${escapeHtml(repoOf(issue).join("/"))}#${issue.number} · ${closedOn}</span></button>${developmentTriggerHtml(issue)}`;
+    const date = new Date(isClosed(issue) ? issue.closed_at : issue.updated_at).toLocaleDateString();
+    item.innerHTML = `<button type="button" class="done-open">${statusIconHtml(issue)}<span class="duplicate-title">${escapeHtml(issue.title)}</span><span class="duplicate-ref">${escapeHtml(repoOf(issue).join("/"))}#${issue.number} · ${date}</span></button>${developmentTriggerHtml(issue)}`;
     item.querySelector(".done-open").addEventListener("click", () => {
       dialog.close();
       openPanel(issue);
     });
     list.append(item);
   }
-}
-
-function refreshDoneDialog() {
-  if (!doneDialog || !doneDialog.open) return;
-  const list = doneDialog.querySelector(".done-list");
-  const scrollTop = list.scrollTop;
-  renderDoneList();
+  if (shown.length === 0 && !archive.loading && !archive.error && !archiveHasMore()) {
+    list.innerHTML = '<p class="duplicate-empty">No archived issue.</p>';
+  }
+  if (archive.error) {
+    const error = document.createElement("p");
+    error.className = "archive-error";
+    error.textContent = `Could not load archived issues: ${archive.error}`;
+    list.append(error);
+  }
+  if (archive.loading) {
+    list.insertAdjacentHTML("beforeend", '<div class="archive-loading"><md-circular-progress indeterminate aria-label="Loading"></md-circular-progress></div>');
+  } else if (archiveHasMore()) {
+    const more = document.createElement("md-text-button");
+    more.className = "archive-more";
+    more.type = "button";
+    more.textContent = archive.error ? "Retry" : `Load ${PAGE_SIZE} more`;
+    more.addEventListener("click", loadMoreArchive);
+    list.append(more);
+  }
   list.scrollTop = scrollTop;
 }
 
-function openDoneDialog() {
-  const dialog = ensureDoneDialog();
-  doneTab = 0;
-  dialog.querySelector("md-tabs").activeTabIndex = 0;
-  renderDoneList();
-  dialog.show();
+function refreshArchiveDialog() {
+  if (archiveDialog?.open) renderArchive();
 }
 
-const doneButton = document.querySelector("#done-button");
-if (doneButton) doneButton.addEventListener("click", openDoneDialog);
+function openArchiveDialog() {
+  const dialog = ensureArchiveDialog();
+  renderArchive();
+  dialog.show();
+  if (!archive.sources && !archive.loading) loadMoreArchive();
+}
+
+const archivesButton = document.querySelector("#archives-button");
+if (archivesButton) archivesButton.addEventListener("click", openArchiveDialog);
 
 function clearTokenField() {
   tokenInput.value = "";
@@ -1744,6 +1838,7 @@ function mergeUpdatedIssue(issue, updated) {
     merged.assignees = base.assignees;
   }
   if (index !== -1) issues[index] = merged;
+  noteArchiveChange(merged);
   return merged;
 }
 
@@ -1788,6 +1883,7 @@ function groupOptions(issue, prefix) {
 
 function panelFlow(issue) {
   const names = issue.labels.map((label) => label.name);
+  if (isClosed(issue) && DONE_VERSIONS.includes(issueVersion(issue))) return DONE_FLOW;
   return FLOWS.find((item) => names.includes(flowLabelName(item))) || (issueVersion(issue) === "Unassigned" ? "" : DEFAULT_FLOW);
 }
 
@@ -1893,6 +1989,18 @@ function renderPanelControls() {
   }
 }
 
+// The Done flow is the closed state: choosing it closes the issue, and leaving it reopens the issue.
+function changeFlow(issue, flow, labels) {
+  if (!accessToken) {
+    openAuthDialog();
+    return;
+  }
+  const closed = isClosed(issue);
+  if (flow === DONE_FLOW && !closed) closeIssue(issue, "completed");
+  else if (flow !== DONE_FLOW && closed) reopenIssue(issue, labels);
+  else patchIssue(issue, { labels });
+}
+
 function bindPanelControls(issue) {
   const controls = panelElements.controls;
   const names = issue.labels.map((label) => label.name);
@@ -1925,7 +2033,9 @@ function bindPanelControls(issue) {
   controls.querySelectorAll("md-menu-item[data-chip]").forEach((item) => {
     item.addEventListener("click", () => {
       const labels = chipLabels(item.dataset.chip, item.dataset.value);
-      if (labels) patchIssue(issue, { labels });
+      if (!labels) return;
+      if (item.dataset.chip === "flow") changeFlow(issue, item.dataset.value, labels);
+      else patchIssue(issue, { labels });
     });
   });
 
