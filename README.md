@@ -76,8 +76,28 @@ appears when an expected label is missing from the repository. The **+ Add**
 button on the main page creates an issue (default repository: `roadmap`) in
 Unassigned and opens it in the side panel. Cards show their labels in their
 GitHub colors, without the text before the ":" (for example "Spec'd" for
-"Flow : Spec'd"). Moving an issue replaces all of its existing `Version : ...`
+"Flow : Spec'd"). Cards are moved by dragging them between columns. Below a divider,
+a card shows its assignees, its comment count (hidden when 0), the linked pull
+request icon and the last update time as on GitHub ("Updated 3 days ago", then an
+absolute date after 30 days). Columns on every page are sorted by last update, most
+recent first. The **Subissues (done/total)** button, with a thin progress bar under it, expands the
+subissues in the manual order stored on GitHub (loaded when the list opens). Each
+row shows its status icon (closed ones are dimmed), reference and assignees, and
+nested subissues appear indented under their parent; clicking a row opens it in the
+side panel. With a token, the drag handle (or the up and down arrow keys when it is
+focused) reorders siblings live and saves the new priority on GitHub, and
+**Add subissue** creates a new issue in the parent's repository and links it.
+Moving an issue replaces all of its existing `Version : ...`
 labels with the selected version label; other labels are preserved.
+
+Drag and drop also changes the hierarchy. Hold a card or a subissue handle over another
+card or subissue row for a moment (or press Shift) to arm it: a solid outline means
+"move under this issue", a line between two rows means "insert at this position", and
+red means not allowed (itself, its own subissue, or deeper than 8 levels). A tooltip
+at the pointer says what the drop does. Before the hold completes (dashed outline
+and a fill sweeping across the target) a drop still just moves the card to the column. Dropping a subissue on a
+column removes it from its parent and moves it there (on a version page it also gets
+that page's Version label). Every hierarchy change shows an **Undo** snackbar.
 
 A one-line footer at the bottom of every page shows the issue count and the
 click/drag hint. Below the search bar (centered; its container spans the width of

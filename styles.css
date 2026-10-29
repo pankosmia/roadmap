@@ -474,8 +474,7 @@ h1 {
   white-space: nowrap;
 }
 
-button.issue-title,
-button.subissue-link {
+button.issue-title {
   padding: 0;
   border: 0;
   background: none;
@@ -521,7 +520,6 @@ button.issue-title:hover {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 8px;
   color: var(--md-sys-color-on-surface-variant);
   font: var(--md-type-label-medium);
 }
@@ -551,35 +549,220 @@ button.issue-title:hover {
 
 .subissues {
   margin: 8px 0;
-  font: var(--md-type-body-medium);
 }
 
-.subissues summary {
-  color: var(--md-sys-color-on-surface-variant);
-  cursor: pointer;
-  font: var(--md-type-label-large);
+.subissues-head {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-button.subissue-link {
-  display: block;
+.subissues-toggle {
+  --md-filled-tonal-button-container-height: 32px;
+  --md-filled-tonal-button-label-text-size: 12px;
+  --md-filled-tonal-button-leading-space: 12px;
+  --md-filled-tonal-button-trailing-space: 8px;
+  --md-filled-tonal-button-with-trailing-icon-leading-space: 12px;
+  --md-filled-tonal-button-with-trailing-icon-trailing-space: 8px;
+  --md-filled-tonal-button-icon-size: 18px;
+}
+
+.subissues-progress {
+  --md-linear-progress-track-height: 4px;
+  --md-linear-progress-active-indicator-height: 4px;
+  --md-linear-progress-track-shape: 2px;
+  --md-linear-progress-active-indicator-color: var(--md-sys-color-primary);
+  --md-linear-progress-track-color: var(--md-sys-color-secondary-container);
   width: 100%;
-  padding: 6px 0 6px 12px;
+}
+
+.subissue-list {
+  margin: 4px -8px 0;
+}
+
+.subissue-children {
+  margin-left: 16px;
+  border-left: 2px solid var(--md-sys-color-outline-variant);
+}
+
+.subissue-node.dragging {
+  opacity: .4;
+}
+
+.subissue-row {
+  display: flex;
+  align-items: center;
+}
+
+.subissue-row .subissue-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.subissue-handle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding: 4px 0 4px 4px;
+  border-radius: var(--md-sys-shape-xs);
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: grab;
+  --md-icon-size: 20px;
+}
+
+.subissue-handle:hover,
+.subissue-handle:focus-visible {
   color: var(--md-sys-color-primary);
-  font: var(--md-type-label-large);
+}
+
+.subissue-handle:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+}
+
+.subissue-item {
+  --md-list-container-color: transparent;
+  --md-list-item-leading-space: 8px;
+  --md-list-item-trailing-space: 8px;
+  --md-list-item-top-space: 6px;
+  --md-list-item-bottom-space: 6px;
+  --md-list-item-one-line-container-height: 40px;
+  --md-list-item-two-line-container-height: 52px;
+  --md-list-item-label-text-size: 13px;
+  --md-list-item-supporting-text-size: 11px;
+  border-radius: var(--md-sys-shape-sm);
+}
+
+.subissue-item.is-closed {
+  opacity: .6;
+}
+
+.subissue-item.is-closed:hover {
+  opacity: .9;
+}
+
+.subissue-item [slot="headline"] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.subissue-status {
+  display: inline-flex;
+}
+
+.subissue-item .avatars {
+  padding-right: 6px;
+}
+
+.subissue-item .avatar {
+  width: 20px;
+  height: 20px;
+}
+
+.issue-card.drop-candidate,
+.subissue-row.drop-candidate {
+  outline: 2px dashed var(--md-sys-color-primary);
+  outline-offset: -2px;
+  background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent), color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent));
+  background-repeat: no-repeat;
+  background-size: 0 100%;
+  animation: drop-charge var(--nest-dwell, 400ms) linear forwards;
+}
+
+@keyframes drop-charge {
+  to { background-size: 100% 100%; }
+}
+
+.issue-card.drop-target,
+.subissue-row.drop-target {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+}
+
+.issue-card.drop-target {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 12%, var(--md-sys-color-surface-container-lowest));
+}
+
+.issue-card.drop-invalid,
+.subissue-row.drop-invalid {
+  outline: 2px solid var(--md-sys-color-error);
+  outline-offset: -2px;
+  cursor: not-allowed;
+}
+
+.drop-line {
+  position: relative;
+  height: 3px;
+  margin: 1px 8px;
+  border-radius: 2px;
+  background: var(--md-sys-color-primary);
+  pointer-events: none;
+}
+
+.drop-line::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--md-sys-color-primary);
+}
+
+.drag-hint {
+  position: fixed;
+  z-index: 2000;
+  max-width: 280px;
+  padding: 4px 10px;
+  border-radius: var(--md-sys-shape-sm);
+  background: var(--md-sys-color-inverse-surface);
+  color: var(--md-sys-color-inverse-on-surface);
+  box-shadow: var(--md-elevation-2);
+  font: var(--md-type-label-medium);
+  pointer-events: none;
+}
+
+.drag-hint.invalid {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}
+
+.subissue-add-button {
+  color: var(--md-sys-color-primary);
+  --md-list-item-label-text-color: var(--md-sys-color-primary);
+  --md-list-item-leading-icon-color: var(--md-sys-color-primary);
+  --md-list-item-one-line-container-height: 36px;
+}
+
+.subissue-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.subissue-add-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .card-footer {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
   margin: 8px -8px 0;
-  padding-top: 4px;
+  padding: 8px 8px 8px;
   border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
-.move-button {
-  --md-text-button-container-height: 32px;
-  --md-text-button-label-text-size: 12px;
-  --md-text-button-icon-size: 18px;
+.card-stats:has(.avatars, .stat, .dev-trigger) + .last-updated {
+  margin-top: 6px;
+}
+
+.last-updated {
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-type-label-small);
 }
 
 .empty-column {
