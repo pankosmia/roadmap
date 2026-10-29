@@ -431,6 +431,9 @@ h1 {
 }
 
 .drop-indicator {
+  position: fixed;
+  z-index: 1500;
+  pointer-events: none;
   height: 4px;
   border-radius: 2px;
   background: var(--md-sys-color-primary);
@@ -697,9 +700,9 @@ button.issue-title:hover {
 }
 
 .drop-line {
-  position: relative;
+  position: fixed;
+  z-index: 1500;
   height: 3px;
-  margin: 1px 8px;
   border-radius: 2px;
   background: var(--md-sys-color-primary);
   pointer-events: none;

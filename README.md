@@ -95,7 +95,9 @@ card or subissue row for a moment (or press Shift) to arm it: a solid outline me
 "move under this issue", a line between two rows means "insert at this position", and
 red means not allowed (itself, its own subissue, or deeper than 8 levels). A tooltip
 below the pointer says what the drop does; the dragged issue is shown as a small label above and to the left of it. Before the hold completes (dashed outline
-and a fill sweeping across the target) a drop still just moves the card to the column. Dropping a subissue on a
+and a fill sweeping across the target) a drop still just moves the card to the column,
+except for a subissue over its own parent card, which stays where it is (that is how
+you reorder without risking to detach it). Dropping a subissue on a
 column removes it from its parent and moves it there (on a version page it also gets
 that page's Version label). Every hierarchy change shows an **Undo** snackbar.
 
