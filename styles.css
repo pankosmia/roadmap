@@ -615,6 +615,45 @@ button.issue-title:hover {
   min-width: 0;
 }
 
+.subissue-toggle,
+.subissue-toggle-spacer {
+  flex: none;
+  width: 52px;
+}
+
+.subissue-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--md-sys-shape-xs);
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+  --md-icon-size: 20px;
+}
+
+.subissue-toggle:hover {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  color: var(--md-sys-color-primary);
+}
+
+.subissue-toggle:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+}
+
+/* The count of the hidden subissues; an open row shows them instead. */
+.subissue-count {
+  font: var(--md-type-label-small);
+}
+
+.subissue-toggle[aria-expanded="true"] .subissue-count {
+  display: none;
+}
+
 .subissue-handle {
   display: inline-flex;
   flex: none;
@@ -1047,9 +1086,9 @@ md-outlined-text-field {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -6px;
+  left: -10px;
   z-index: 2;
-  width: 12px;
+  width: 20px;
   cursor: col-resize;
   touch-action: none;
 }
@@ -1058,20 +1097,24 @@ md-outlined-text-field {
   content: "";
   position: absolute;
   top: 50%;
-  left: 4px;
-  width: 4px;
-  height: 48px;
-  border-radius: 2px;
-  background: var(--md-sys-color-outline);
-  opacity: 0;
+  left: 2px;
+  width: 16px;
+  height: 64px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle, var(--md-sys-color-on-surface-variant) 1.5px, transparent 2px) center / 6px 8px repeat-y,
+    var(--md-sys-color-surface-container-high, var(--md-sys-color-surface));
+  box-shadow: 0 1px 3px rgb(0 0 0 / .3);
   transform: translateY(-50%);
-  transition: opacity .15s;
+  transition: border-color .15s, box-shadow .15s;
 }
 
 .panel-resizer:hover::after,
 .panel-resizer:focus-visible::after,
 .is-resizing .panel-resizer::after {
-  opacity: 1;
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
 }
 
 .panel-resizer:focus-visible {
@@ -1450,6 +1493,12 @@ md-outlined-text-field {
 .has-error .connected-button:not([aria-pressed="true"]) {
   background: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);
+}
+
+.field-helper {
+  margin: 8px 0 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-type-body-small);
 }
 
 .field-error {

@@ -114,7 +114,8 @@ function invalidReason(plan) {
 // so the same place never has two different targets that the pointer could flip between.
 function insertCandidate(parent, issue, node, zone, el, rootId) {
   if (zone === "after") {
-    const firstChild = node.querySelector(":scope > .subissue-children > .subissue-node");
+    const children = node.querySelector(":scope > .subissue-children");
+    const firstChild = children && !children.hidden ? children.querySelector(":scope > .subissue-node") : null;
     const next = firstChild || node.nextElementSibling;
     if (next && next.classList.contains("subissue-node")) {
       const nextIssue = findKnownIssue(Number(next.dataset.issueId));
@@ -156,6 +157,7 @@ function nearestRowCandidate(event, list, rootId) {
   let bestDistance = MAGNET_PX + 1;
   for (const row of list.querySelectorAll(".subissue-row")) {
     const rect = row.getBoundingClientRect();
+    if (rect.height === 0) continue;
     const distance = event.clientY < rect.top ? rect.top - event.clientY : event.clientY - rect.bottom;
     if (distance >= 0 && distance < bestDistance) {
       best = { row, zone: event.clientY < rect.top ? "before" : "after" };
@@ -199,6 +201,17 @@ function startDwell(drag, candidate) {
   if (toggle && candidate.el.querySelector(".subissue-list")?.hidden) {
     drag.expandTimer = setTimeout(() => toggle.click(), EXPAND_DWELL_MS);
   }
+}
+
+// Resting on a collapsed row opens its subissues, so that the drop can target them.
+function startRowExpand(drag, candidate) {
+  if (!candidate.el.classList.contains("subissue-row")) return;
+  const node = candidate.el.parentElement;
+  const children = node.querySelector(":scope > .subissue-children");
+  if (!children?.hidden || node.contains(drag.node)) return;
+  drag.expandTimer = setTimeout(() => {
+    if (dragState === drag) setSubissueNodeExpanded(node, true);
+  }, EXPAND_DWELL_MS);
 }
 
 function hintText(candidate, active, reason, event) {
@@ -274,6 +287,7 @@ function evaluate(event) {
     drag.key = key;
     drag.armed = false;
     if (candidate && needsDwell(candidate)) startDwell(drag, candidate);
+    else if (candidate && candidate.type !== "self") startRowExpand(drag, candidate);
   }
   if (candidate && event.shiftKey) drag.armed = true;
   const active = candidate && (drag.armed || !needsDwell(candidate)) ? candidate : null;
@@ -438,6 +452,8 @@ async function nestIssue(issue, parent, position = null, rootId = null) {
   }
   relationBusy = false;
   if (rootId) expandedSubissues.add(rootId);
+  expandedSubissueNodes.add(parent.id);
+  expandSubissuePath(parent);
   redrawAfterRelationChange();
   // The notice about the ignored drop must not hide the Undo of the change that has just finished.
   if (notice.textContent === BUSY_MESSAGE) notice.hidden = true;

@@ -4,6 +4,8 @@
 const SUBISSUE_MAX_DEPTH = 5;
 
 const expandedSubissues = new Set();
+// Nested subissues that show their own children; they start collapsed.
+const expandedSubissueNodes = new Set();
 // Parent issue id -> its subissues in the order GitHub stores them (the manual priority).
 const subIssueOrders = new Map();
 const subIssueLoads = new Map();
@@ -117,6 +119,39 @@ function subIssueHandleHtml(subIssue) {
   return `<span class="subissue-handle" role="button" tabindex="0" draggable="true" title="Drag to move or reorder" aria-label="${escapeHtml(label)}"><md-icon>drag_indicator</md-icon></span>`;
 }
 
+function subIssueToggleLabel(subIssue, expanded) {
+  return `${expanded ? "Collapse" : "Expand"} the subissues of #${subIssue.number}`;
+}
+
+function subIssueToggleHtml(subIssue, count, expanded) {
+  return `<button type="button" class="subissue-toggle" aria-expanded="${expanded}" aria-label="${escapeHtml(subIssueToggleLabel(subIssue, expanded))}" title="${expanded ? "Collapse" : "Expand"} subissues"><md-icon>${expanded ? "expand_more" : "chevron_right"}</md-icon><span class="subissue-count">${count}</span></button>`;
+}
+
+// Opens or closes the children of a nested subissue, in the page and in the remembered state.
+function setSubissueNodeExpanded(node, open) {
+  const children = node.querySelector(":scope > .subissue-children");
+  const toggle = node.querySelector(":scope > .subissue-row > .subissue-toggle");
+  if (!children || !toggle) return;
+  const id = Number(node.dataset.issueId);
+  const subIssue = findKnownIssue(id);
+  if (open) expandedSubissueNodes.add(id);
+  else expandedSubissueNodes.delete(id);
+  children.hidden = !open;
+  toggle.setAttribute("aria-expanded", String(open));
+  if (subIssue) toggle.setAttribute("aria-label", subIssueToggleLabel(subIssue, open));
+  toggle.title = `${open ? "Collapse" : "Expand"} subissues`;
+  toggle.querySelector("md-icon").textContent = open ? "expand_more" : "chevron_right";
+}
+
+// Shows the subissues leading to this issue, so that a freshly moved subissue is not hidden in a collapsed row.
+function expandSubissuePath(issue) {
+  let parent = issues.find((item) => item.url === issue.parent_issue_url);
+  while (parent) {
+    expandedSubissueNodes.add(parent.id);
+    parent = issues.find((item) => item.url === parent.parent_issue_url);
+  }
+}
+
 function createSubIssueNode(parent, subIssue, path, canDrag) {
   const node = document.createElement("div");
   node.className = "subissue-node";
@@ -139,9 +174,19 @@ function createSubIssueNode(parent, subIssue, path, canDrag) {
   node.append(row);
 
   const nextPath = new Set(path).add(subIssue.id);
-  if (nextPath.size < SUBISSUE_MAX_DEPTH) {
-    const children = renderSubIssueGroup(subIssue, nextPath);
-    if (children) node.append(children);
+  const children = nextPath.size < SUBISSUE_MAX_DEPTH ? renderSubIssueGroup(subIssue, nextPath) : null;
+  if (children) {
+    const expanded = expandedSubissueNodes.has(subIssue.id);
+    children.hidden = !expanded;
+    const progress = subIssueProgress(subIssue);
+    const count = progress ? `${progress.done}/${progress.total}` : String(children.childElementCount);
+    row.insertAdjacentHTML("afterbegin", subIssueToggleHtml(subIssue, count, expanded));
+    row.querySelector(".subissue-toggle").addEventListener("click", () => {
+      setSubissueNodeExpanded(node, children.hidden);
+    });
+    node.append(children);
+  } else {
+    row.insertAdjacentHTML("afterbegin", '<span class="subissue-toggle-spacer" aria-hidden="true"></span>');
   }
   return node;
 }

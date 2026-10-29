@@ -201,6 +201,7 @@ async function loadIssues({ force = false } = {}) {
   if (force) {
     subIssueOrders.clear();
     expandedSubissues.clear();
+    expandedSubissueNodes.clear();
   }
   const cached = force ? null : readIssuesCache();
   if (cached) {
@@ -522,7 +523,7 @@ function createIssueCard(issue) {
   const repository = displayRepo(repoOf(issue).join("/"));
   const number = issue.number;
   const labels = issue.labels
-    .filter((label) => (detailVersion ? !isFlowLabel(label.name) : !isVersionLabel(label.name)))
+    .filter((label) => !isVersionLabel(label.name) && !(detailVersion && isFlowLabel(label.name)))
     .map(labelChipHtml)
     .join("");
 
@@ -1991,7 +1992,7 @@ function renderPanelControls() {
       </label>`;
   }).join("");
 
-  const buttonGroup = (prefix, mode, required = false) => {
+  const buttonGroup = (prefix, mode, required = false, helper = "") => {
     const options = orderedGroupOptions(issue, prefix);
     const mandatory = required && options.length > 0;
     const invalid = mandatory && panelErrors.has(prefix) && isGroupMissing(issue, prefix);
@@ -2004,6 +2005,7 @@ function renderPanelControls() {
         <div class="connected-group" role="group" aria-labelledby="${labelId}" ${invalid ? `aria-describedby="${labelId}-error"` : ""} data-mode="${mode}" ${required ? 'data-required="true"' : ""}>
           ${options.map((name) => `<button type="button" class="connected-button" data-group-label="${escapeHtml(name)}" data-prefix="${prefix}" aria-pressed="${names.includes(name)}" title="${escapeHtml(labelValue(name))}" ${disabled}><md-ripple></md-ripple><md-focus-ring></md-focus-ring><span>${escapeHtml(labelValue(name))}</span></button>`).join("")}
         </div>`}
+        ${helper && options.length > 0 ? `<p class="field-helper">${helper}</p>` : ""}
         ${invalid ? `<p class="field-error" id="${labelId}-error" role="alert">${message}</p>` : ""}
       </div>`;
   };
@@ -2028,7 +2030,7 @@ function renderPanelControls() {
       <h3>Labels</h3>
       <div class="switches">${metaSwitches}</div>
       ${buttonGroup("Type", "exclusive", true)}
-      ${buttonGroup("Stack", "multi", true)}
+      ${buttonGroup("Stack", "multi", true, "Multi-select allowed.")}
       ${buttonGroup("Priority", "clearable")}
     </section>
     ${developmentSectionHtml(issue)}
