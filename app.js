@@ -561,18 +561,24 @@ function removeDropIndicator() {
   document.querySelectorAll(".drop-indicator").forEach((indicator) => indicator.remove());
 }
 
+// The line floats above the board (it takes no room), so showing it never shifts the cards under the pointer.
 function showDropIndicator(column, y) {
   const list = column.querySelector(".issue-list");
-  let indicator = list.querySelector(".drop-indicator");
+  let indicator = document.querySelector(".drop-indicator");
   if (!indicator) {
-    removeDropIndicator();
     indicator = document.createElement("div");
     indicator.className = "drop-indicator";
+    document.body.append(indicator);
   }
+  const listRect = list.getBoundingClientRect();
   const cards = [...list.querySelectorAll(".issue-card:not(.dragging)")];
   const next = cards.find((card) => y < card.getBoundingClientRect().top + card.offsetHeight / 2);
-  if (next) list.insertBefore(indicator, next);
-  else list.append(indicator);
+  let top = listRect.top;
+  if (next) top = next.getBoundingClientRect().top - 3;
+  else if (cards.length > 0) top = cards[cards.length - 1].getBoundingClientRect().bottom + 3;
+  indicator.style.left = `${listRect.left}px`;
+  indicator.style.width = `${listRect.width}px`;
+  indicator.style.top = `${Math.min(Math.max(top, listRect.top), listRect.bottom) - 2}px`;
 }
 
 function onDragOver(event) {
