@@ -25,6 +25,17 @@ function beginDrag(kind, issue, node) {
   document.body.append(dragHint);
 }
 
+// A small label stands for the dragged issue. It sits up and to the left of the pointer, so the tooltip
+// (below and to the right) is never covered: the browser paints the drag image above the page.
+function setDragGhost(event, issue) {
+  const ghost = document.createElement("div");
+  ghost.className = "drag-ghost";
+  ghost.innerHTML = `${statusIconHtml(issue)}<span class="drag-ghost-title">#${issue.number} ${escapeHtml(issue.title)}</span>`;
+  document.body.append(ghost);
+  event.dataTransfer.setDragImage(ghost, ghost.offsetWidth + 8, ghost.offsetHeight + 8);
+  setTimeout(() => ghost.remove(), 0);
+}
+
 function endDrag() {
   if (!dragState) return;
   const state = dragState;

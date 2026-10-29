@@ -87,18 +87,18 @@ function flushSubissueRefreshes() {
 }
 
 function subIssueHandleHtml(subIssue) {
-  const label = `Reorder #${subIssue.number}: drag it, or use the up and down arrow keys`;
-  return `<span class="subissue-handle" role="button" tabindex="0" draggable="true" title="Drag to reorder" aria-label="${escapeHtml(label)}"><md-icon>drag_indicator</md-icon></span>`;
+  const label = `Move #${subIssue.number}: drag it, or use the up and down arrow keys to reorder`;
+  return `<span class="subissue-handle" role="button" tabindex="0" draggable="true" title="Drag to move or reorder" aria-label="${escapeHtml(label)}"><md-icon>drag_indicator</md-icon></span>`;
 }
 
-function createSubIssueNode(parent, subIssue, path, canReorder) {
+function createSubIssueNode(parent, subIssue, path, canDrag) {
   const node = document.createElement("div");
   node.className = "subissue-node";
   node.dataset.issueId = subIssue.id;
 
   const row = document.createElement("div");
   row.className = "subissue-row";
-  if (canReorder) row.insertAdjacentHTML("beforeend", subIssueHandleHtml(subIssue));
+  if (canDrag) row.insertAdjacentHTML("beforeend", subIssueHandleHtml(subIssue));
   const item = document.createElement("md-list-item");
   item.type = "button";
   item.className = isClosed(subIssue) ? "subissue-item is-closed" : "subissue-item";
@@ -125,9 +125,9 @@ function renderSubIssueGroup(parent, path, container = document.createElement("d
   const children = orderedSubIssues(parent).filter((child) => !path.has(child.id));
   if (children.length === 0) return null;
   container.dataset.parentId = parent.id;
-  const canReorder = Boolean(accessToken) && subIssueOrders.has(parent.id) && children.length > 1;
+  const canDrag = Boolean(accessToken);
   if (container.className === "") container.className = "subissue-children";
-  container.prepend(...children.map((child) => createSubIssueNode(parent, child, path, canReorder)));
+  container.prepend(...children.map((child) => createSubIssueNode(parent, child, path, canDrag)));
   return container;
 }
 
@@ -178,23 +178,36 @@ function createSubissues(issue) {
   return section;
 }
 
+// A drag that starts on a subissue row (not only on its handle) moves that subissue, never the whole parent card.
+let pressedSubissueNode = null;
+document.addEventListener("pointerdown", (event) => {
+  pressedSubissueNode = event.target instanceof Element ? event.target.closest(".subissue-node") : null;
+}, true);
+
+function pressedSubissue(card) {
+  return pressedSubissueNode && card.contains(pressedSubissueNode) ? pressedSubissueNode : null;
+}
+
+function startSubissueDrag(event, node) {
+  const subIssue = findKnownIssue(Number(node.dataset.issueId));
+  if (!subIssue) {
+    event.preventDefault();
+    return;
+  }
+  beginDrag("subissue", subIssue, node);
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", String(subIssue.id));
+  setDragGhost(event, subIssue);
+  requestAnimationFrame(() => node.classList.add("dragging"));
+}
+
 // Reordering: the handle starts a drag (see nesting.js for the drop targets and the live reorder).
 function setupReorder(section, list) {
   list.addEventListener("dragstart", (event) => {
     const handle = event.target instanceof Element ? event.target.closest(".subissue-handle") : null;
     if (!handle) return;
     event.stopPropagation();
-    const node = handle.closest(".subissue-node");
-    const subIssue = findKnownIssue(Number(node.dataset.issueId));
-    if (!subIssue) {
-      event.preventDefault();
-      return;
-    }
-    beginDrag("subissue", subIssue, node);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", String(subIssue.id));
-    event.dataTransfer.setDragImage(node.querySelector(".subissue-row"), 16, 16);
-    requestAnimationFrame(() => node.classList.add("dragging"));
+    startSubissueDrag(event, handle.closest(".subissue-node"));
   });
 
   list.addEventListener("dragend", endDrag);

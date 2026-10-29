@@ -552,9 +552,10 @@ button.issue-title:hover {
 }
 
 .subissues-head {
+  position: relative;
   display: inline-flex;
-  flex-direction: column;
-  gap: 4px;
+  border-radius: 16px;
+  overflow: hidden;
 }
 
 .subissues-toggle {
@@ -567,13 +568,18 @@ button.issue-title:hover {
   --md-filled-tonal-button-icon-size: 18px;
 }
 
+/* The progress bar is the bottom edge of the button. */
 .subissues-progress {
-  --md-linear-progress-track-height: 4px;
-  --md-linear-progress-active-indicator-height: 4px;
-  --md-linear-progress-track-shape: 2px;
+  --md-linear-progress-track-height: 3px;
+  --md-linear-progress-active-indicator-height: 3px;
+  --md-linear-progress-track-shape: 0;
   --md-linear-progress-active-indicator-color: var(--md-sys-color-primary);
-  --md-linear-progress-track-color: var(--md-sys-color-secondary-container);
-  width: 100%;
+  --md-linear-progress-track-color: color-mix(in srgb, var(--md-sys-color-primary) 20%, transparent);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
 }
 
 .subissue-list {
@@ -708,6 +714,28 @@ button.issue-title:hover {
   height: 9px;
   border-radius: 50%;
   background: var(--md-sys-color-primary);
+}
+
+.drag-ghost {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 4px 12px 4px 8px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-sm);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  font: var(--md-type-label-large, 500 14px/20px sans-serif);
+  white-space: nowrap;
+}
+
+.drag-ghost-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .drag-hint {

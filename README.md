@@ -80,7 +80,7 @@ GitHub colors, without the text before the ":" (for example "Spec'd" for
 a card shows its assignees, its comment count (hidden when 0), the linked pull
 request icon and the last update time as on GitHub ("Updated 3 days ago", then an
 absolute date after 30 days). Columns on every page are sorted by last update, most
-recent first. The **Subissues (done/total)** button, with a thin progress bar under it, expands the
+recent first. The **Subissues (done/total)** button, with a thin progress bar along its bottom edge, expands the
 subissues in the manual order stored on GitHub (loaded when the list opens). Each
 row shows its status icon (closed ones are dimmed), reference and assignees, and
 nested subissues appear indented under their parent; clicking a row opens it in the
@@ -90,11 +90,11 @@ focused) reorders siblings live and saves the new priority on GitHub, and
 Moving an issue replaces all of its existing `Version : ...`
 labels with the selected version label; other labels are preserved.
 
-Drag and drop also changes the hierarchy. Hold a card or a subissue handle over another
+Drag and drop also changes the hierarchy. Hold a card or a subissue (dragged by its row or its handle) over another
 card or subissue row for a moment (or press Shift) to arm it: a solid outline means
 "move under this issue", a line between two rows means "insert at this position", and
 red means not allowed (itself, its own subissue, or deeper than 8 levels). A tooltip
-at the pointer says what the drop does. Before the hold completes (dashed outline
+below the pointer says what the drop does; the dragged issue is shown as a small label above and to the left of it. Before the hold completes (dashed outline
 and a fill sweeping across the target) a drop still just moves the card to the column. Dropping a subissue on a
 column removes it from its parent and moves it there (on a version page it also gets
 that page's Version label). Every hierarchy change shows an **Undo** snackbar.
