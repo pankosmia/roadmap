@@ -70,7 +70,7 @@ function refreshDevelopmentIcons() {
     slot.innerHTML = html;
   }
   if (developmentPopover && !developmentPopover.trigger.isConnected) closeDevelopmentPopover(false);
-  refreshDoneDialog();
+  refreshArchiveDialog();
 }
 
 function setIssuePulls(issueId, pulls) {
