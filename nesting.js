@@ -400,12 +400,21 @@ function redrawAfterRelationChange() {
   refreshPanel();
 }
 
+// Hierarchy changes are sent one at a time; a drop made while one is running is not queued.
+const BUSY_MESSAGE = "Another change is still being saved. Try again in a moment.";
+function showBusyNotice() {
+  showNotice(BUSY_MESSAGE, true);
+}
+
 async function nestIssue(issue, parent, position = null, rootId = null) {
   if (!accessToken) {
     openAuthDialog();
     return;
   }
-  if (relationBusy) return;
+  if (relationBusy) {
+    showBusyNotice();
+    return;
+  }
   relationBusy = true;
   notice.hidden = true;
   const oldUrl = issue.parent_issue_url || null;
@@ -430,12 +439,17 @@ async function nestIssue(issue, parent, position = null, rootId = null) {
   relationBusy = false;
   if (rootId) expandedSubissues.add(rootId);
   redrawAfterRelationChange();
+  // The notice about the ignored drop must not hide the Undo of the change that has just finished.
+  if (notice.textContent === BUSY_MESSAGE) notice.hidden = true;
   const undo = oldUrl ? () => nestIssue(issue, parentByUrl(oldUrl)) : () => unnestIssue(issue, parent.url);
   if (notice.hidden) showUndo(`Moved #${issue.number} under #${numberFromUrl(parent.url)}.`, undo);
 }
 
 async function unnestIssue(issue, parentUrl) {
-  if (relationBusy) return false;
+  if (relationBusy) {
+    showBusyNotice();
+    return false;
+  }
   relationBusy = true;
   notice.hidden = true;
   try {
