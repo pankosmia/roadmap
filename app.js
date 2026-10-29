@@ -93,8 +93,31 @@ function requestHeaders(token = "") {
   return headers;
 }
 
+// Delays before each retry of a read request that failed on the network (e.g. connections that died while the computer slept).
+const RETRY_DELAYS = [1000, 3000];
+const TRANSIENT_STATUSES = [502, 503, 504];
+
+// Only reads are retried: GET requests and GraphQL queries (the dashboard sends no GraphQL mutation).
+function isReadRequest(url, options) {
+  const method = (options.method || "GET").toUpperCase();
+  return method === "GET" || (method === "POST" && url.endsWith("/graphql"));
+}
+
+async function fetchWithRetry(url, options) {
+  const delays = isReadRequest(url, options) ? RETRY_DELAYS : [];
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const response = await fetch(url, options);
+      if (!TRANSIENT_STATUSES.includes(response.status) || attempt >= delays.length) return response;
+    } catch (error) {
+      if (attempt >= delays.length) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+  }
+}
+
 async function githubRequest(url, options = {}, token = "") {
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     ...options,
     headers: { ...requestHeaders(token), ...options.headers }
   });
@@ -654,9 +677,21 @@ function showUndo(issue, previousColumn) {
   undoTimer = setTimeout(() => toast.remove(), 8000);
 }
 
-function showNotice(message, isError = false) {
+// The optional action adds a button to the notice: { label, onClick }.
+function showNotice(message, isError = false, action = null) {
   notice.textContent = message;
   notice.classList.toggle("error", isError);
+  if (action) {
+    const button = document.createElement("md-text-button");
+    button.className = "notice-action";
+    button.type = "button";
+    button.textContent = action.label;
+    button.addEventListener("click", () => {
+      notice.hidden = true;
+      action.onClick();
+    });
+    notice.append(button);
+  }
   notice.hidden = false;
 }
 

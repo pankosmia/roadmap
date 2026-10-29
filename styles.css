@@ -609,6 +609,14 @@ button.subissue-link {
   color: var(--md-sys-color-on-error-container);
 }
 
+.notice-action {
+  margin-inline-start: 8px;
+  --md-text-button-label-text-color: currentColor;
+  --md-text-button-hover-label-text-color: currentColor;
+  --md-text-button-focus-label-text-color: currentColor;
+  --md-text-button-pressed-label-text-color: currentColor;
+}
+
 [hidden] {
   display: none !important;
 }
