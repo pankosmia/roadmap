@@ -594,8 +594,17 @@ button.issue-title:hover {
   border-left: 2px solid var(--md-sys-color-outline-variant);
 }
 
-.subissue-node.dragging {
-  opacity: .4;
+/* While reordering, the dragged subissue is the target: it shows where it will land. */
+.subissue-node.dragging > .subissue-row {
+  border-radius: 8px;
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--md-sys-color-primary) 14%, transparent);
+}
+
+.subissue-node.dragging > .subissue-row > .subissue-item,
+.subissue-node.dragging > .subissue-children {
+  opacity: .6;
 }
 
 .subissue-row {
@@ -702,7 +711,7 @@ button.issue-title:hover {
 .drop-line {
   position: fixed;
   z-index: 1500;
-  height: 3px;
+  height: 4px;
   border-radius: 2px;
   background: var(--md-sys-color-primary);
   pointer-events: none;
@@ -712,11 +721,24 @@ button.issue-title:hover {
   content: "";
   position: absolute;
   top: -3px;
-  left: -4px;
-  width: 9px;
-  height: 9px;
+  left: -5px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--md-sys-color-primary);
+}
+
+/* A soft band around the line shows how big the target is. */
+.drop-line::after,
+.drop-indicator::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -10px;
+  height: 24px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--md-sys-color-primary) 16%, transparent);
 }
 
 .drag-ghost {
@@ -764,19 +786,6 @@ button.issue-title:hover {
   --md-list-item-label-text-color: var(--md-sys-color-primary);
   --md-list-item-leading-icon-color: var(--md-sys-color-primary);
   --md-list-item-one-line-container-height: 36px;
-}
-
-.subissue-add-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px;
-}
-
-.subissue-add-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 
 .card-footer {

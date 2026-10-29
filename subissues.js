@@ -225,14 +225,6 @@ function setupReorder(section, list) {
     handle.focus();
     commitReorder(section, node);
   });
-
-  // Text cannot be selected with the mouse inside a draggable element in Firefox.
-  list.addEventListener("focusin", (event) => {
-    if (event.target.closest(".subissue-add-form")) section.closest(".issue-card").draggable = false;
-  });
-  list.addEventListener("focusout", (event) => {
-    if (event.target.closest(".subissue-add-form")) section.closest(".issue-card").draggable = Boolean(accessToken);
-  });
 }
 
 function commitReorder(section, node) {
@@ -272,7 +264,7 @@ function reorderSubIssues(section, parent, ids, movedId) {
   reorderQueues.set(parent.id, run);
 }
 
-// Inline creation of a subissue in the repository of its parent.
+// Opens the Create issue panel with this issue as the parent.
 function createAddRow(parentId) {
   const wrap = document.createElement("div");
   wrap.className = "subissue-add";
@@ -281,102 +273,10 @@ function createAddRow(parentId) {
       <md-icon slot="start">add</md-icon>
       <div slot="headline">Add subissue</div>
     </md-list-item>
-    <div class="subissue-add-form" hidden>
-      <md-outlined-text-field class="subissue-title-input" label="Subissue title"></md-outlined-text-field>
-      <div class="subissue-add-actions">
-        <md-text-button class="subissue-cancel" type="button">Cancel</md-text-button>
-        <md-filled-tonal-button class="subissue-submit" type="button">Add</md-filled-tonal-button>
-      </div>
-    </div>
   `;
-  const addButton = wrap.querySelector(".subissue-add-button");
-  const form = wrap.querySelector(".subissue-add-form");
-  const field = wrap.querySelector(".subissue-title-input");
-  const cancel = wrap.querySelector(".subissue-cancel");
-  const submit = wrap.querySelector(".subissue-submit");
-
-  const close = () => {
-    form.hidden = true;
-    addButton.hidden = false;
-    field.value = "";
-    field.error = false;
-    field.errorText = "";
-  };
-  const setBusy = (busy) => {
-    field.disabled = busy;
-    cancel.disabled = busy;
-    submit.disabled = busy;
-  };
-  const send = async () => {
-    const title = field.value.trim();
-    if (!title) {
-      field.error = true;
-      field.errorText = "Enter a title.";
-      return;
-    }
-    field.error = false;
-    field.errorText = "";
-    setBusy(true);
-    try {
-      await addSubIssue(parentId, title);
-    } catch (error) {
-      setBusy(false);
-      field.error = true;
-      field.errorText = apiErrorMessage(error);
-    }
-  };
-
-  addButton.addEventListener("click", () => {
-    if (!accessToken) {
-      openAuthDialog();
-      return;
-    }
-    addButton.hidden = true;
-    form.hidden = false;
-    field.focus();
-  });
-  cancel.addEventListener("click", close);
-  submit.addEventListener("click", send);
-  field.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      send();
-    } else if (event.key === "Escape") {
-      event.stopPropagation();
-      close();
-    }
+  wrap.querySelector(".subissue-add-button").addEventListener("click", () => {
+    const parent = issues.find((item) => item.id === parentId);
+    if (parent) openNewIssuePanel(parent);
   });
   return wrap;
-}
-
-async function addSubIssue(parentId, title) {
-  const parent = issues.find((item) => item.id === parentId);
-  if (!parent) throw new Error("The parent issue is no longer loaded.");
-  const repo = repoOf(parent).join("/");
-  const created = await githubRequest(
-    `${API_ROOT}/repos/${repo.split("/").map(encodeURIComponent).join("/")}/issues`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) },
-    accessToken
-  );
-  let linkError = null;
-  try {
-    await sendRelationRequest("POST", `${issueApiUrl(repo, parent.number)}/sub_issues`, { sub_issue_id: created.id });
-  } catch (error) {
-    linkError = error;
-  }
-  if (!linkError) {
-    const before = parent.sub_issues_summary || { total: subIssuesOf(parent).length, completed: 0 };
-    const total = before.total + 1;
-    parent.sub_issues_summary = { total, completed: before.completed, percent_completed: Math.round((before.completed / total) * 100) };
-    created.parent_issue_url = parent.url;
-    const order = subIssueOrders.get(parent.id);
-    if (order) order.push(created);
-  }
-  issues.unshift(created);
-  saveIssuesCache();
-  renderBoard();
-  summary.textContent = summaryText();
-  if (linkError) {
-    showNotice(`Issue #${created.number} was created, but could not be added as a subissue: ${apiErrorMessage(linkError)}`, true);
-  }
 }
