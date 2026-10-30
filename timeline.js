@@ -931,6 +931,7 @@ function startEdit(timeline, id) {
   const editor = createMarkdownEditor({
     renderPreview: renderMarkdownPreview,
     onSubmit: () => saveEdit(timeline, id),
+    mentions: issueMentions,
     label: "Edit comment",
     placeholder: "Leave a comment"
   });
@@ -1165,6 +1166,7 @@ function createTimeline(container) {
     renderPreview: renderMarkdownPreview,
     onSubmit: () => submitComment(),
     onInput: () => renderTimelineChrome(),
+    mentions: issueMentions,
     label: "Comment",
     placeholder: "Leave a comment"
   });

@@ -113,6 +113,15 @@ counts as unsaved changes when the panel closes. The timeline follows the board'
 live updates (see above) and refreshes after the panel's own saves; without a token
 it is read-only.
 
+**Mentions** (`mentions.js`, `markdown-editor.js`): typing `@` in a Markdown editor
+(description, new comment, comment edit) opens a list of up to 5 people at the caret,
+as on GitHub. The issue's author, latest commenters and assignees come first, then
+the other assignable people of the repository, then the people GitHub reports as
+mentionable in it (GraphQL `mentionableUsers`, searched by login or name while you
+type, cached for the session). ↑ / ↓ move, Enter or Tab insert `@login `, Esc closes
+the list (and does not close the panel), and clicking a person works too. The list
+only opens after whitespace or a `(`, so an email address does not trigger it.
+
 Menus open and close without animation.
 
 The Settings column is 440px wide and sits next to the description from a 940px
