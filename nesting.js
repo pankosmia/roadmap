@@ -31,6 +31,9 @@ function beginDrag(kind, issue, node) {
   dragHint.className = "drag-hint";
   dragHint.hidden = true;
   document.body.append(dragHint);
+  // The header's children (title link, buttons) stop catching the pointer, so a drop on the header reaches the column.
+  // Set after the drag has started: changing the page inside dragstart can cancel the drag in some browsers.
+  requestAnimationFrame(() => document.body.classList.toggle("dragging-issue", dragState !== null));
 }
 
 // A small label stands for the dragged issue. It sits up and to the left of the pointer, so the tooltip
@@ -45,6 +48,7 @@ function setDragGhost(event, issue) {
 }
 
 function endDrag() {
+  document.body.classList.remove("dragging-issue");
   if (!dragState) return;
   const state = dragState;
   dragState = null;
@@ -356,8 +360,17 @@ function adjustSummary(parentUrl, total, completed) {
   const children = subIssuesOf(target);
   const before = target.sub_issues_summary || { total: children.length, completed: children.filter(isClosed).length };
   const next = { total: Math.max(0, before.total + total), completed: Math.max(0, before.completed + completed) };
+  next.completed = Math.min(next.completed, next.total);
   next.percent_completed = next.total ? Math.round((next.completed / next.total) * 100) : 0;
   target.sub_issues_summary = next;
+}
+
+// Closing or reopening a subissue changes the completed count of its parent: GitHub's summary on the parent
+// does not follow until the next full load, so the local copy is adjusted. Call it before the issue is replaced.
+function noteStateChange(before, after) {
+  const parentUrl = before.parent_issue_url;
+  if (!parentUrl || isClosed(before) === isClosed(after)) return;
+  adjustSummary(parentUrl, 0, isClosed(after) ? 1 : -1);
 }
 
 // Forgets the cached order of a parent and of the parents above it, so that it is fetched again.
@@ -429,6 +442,8 @@ async function nestIssue(issue, parent, position = null, rootId = null) {
     showBusyNotice();
     return;
   }
+  // An undo holds an older copy of the issue; its current state decides how the parent's count changes.
+  issue = liveIssue(issue);
   relationBusy = true;
   notice.hidden = true;
   const oldUrl = issue.parent_issue_url || null;
@@ -468,6 +483,7 @@ async function unnestIssue(issue, parentUrl) {
   }
   relationBusy = true;
   notice.hidden = true;
+  issue = liveIssue(issue);
   try {
     await sendRelationRequest("DELETE", `${parentUrl}/sub_issue`, { sub_issue_id: issue.id });
   } catch (error) {
@@ -490,6 +506,8 @@ async function dropOnColumn(issue, version) {
     return;
   }
   if (!(await unnestIssue(issue, parentUrl))) return;
-  showUndo(`Removed #${issue.number} from #${numberFromUrl(parentUrl)}.`, () => nestIssue(issue, parentByUrl(parentUrl)));
-  await moveIssue(issues.find((item) => item.id === issue.id) || issue, version, { restoreParent: parentUrl });
+  // The move reports both changes in one snackbar. Without a move (same column, a cancelled choice, a failure),
+  // the removal is reported alone.
+  const moved = await moveIssue(issues.find((item) => item.id === issue.id) || issue, version, { restoreParent: parentUrl });
+  if (!moved) showUndo(`Removed #${issue.number} from #${numberFromUrl(parentUrl)}.`, () => nestIssue(issue, parentByUrl(parentUrl)));
 }

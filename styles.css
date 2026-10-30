@@ -265,6 +265,8 @@ h1 {
 
 /* Board */
 .board {
+  /* A column never gets narrower than this: when the columns do not fit, the whole board scrolls, not a column. */
+  --column-width: clamp(280px, 24vw, 340px);
   display: flex;
   flex: 1 1 0;
   flex-wrap: nowrap;
@@ -285,9 +287,9 @@ h1 {
 
 .column {
   display: flex;
-  flex: 1 1 260px;
+  flex: 1 0 var(--column-width);
   flex-direction: column;
-  min-width: 260px;
+  min-width: var(--column-width);
   max-width: 420px;
   min-height: 0;
   overflow: hidden;
@@ -314,6 +316,11 @@ h1 {
 
 .column-heading .issue-count {
   margin-left: auto;
+}
+
+/* While an issue is dragged, the whole header is the drop target, whatever is under the pointer. */
+body.dragging-issue .column-heading * {
+  pointer-events: none;
 }
 
 .column-dot {
@@ -425,8 +432,11 @@ h1 {
 
 .issue-list {
   display: grid;
+  /* One column that can shrink below its content, so a wide card never makes the list scroll sideways. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 4px 8px 8px;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -1754,12 +1764,12 @@ md-outlined-text-field {
   }
 
   .board {
+    --column-width: min(82vw, 360px);
     scroll-snap-type: x mandatory;
   }
 
   .column {
-    flex: 0 0 min(82vw, 360px);
-    min-width: 0;
+    flex: 0 0 var(--column-width);
     scroll-snap-align: start;
   }
 

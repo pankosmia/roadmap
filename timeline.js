@@ -160,7 +160,7 @@ function joinList(parts) {
 function timelineLabelHtml(label) {
   const color = /^[0-9a-f]{6}$/i.test(label?.color || "") ? label.color : "";
   const style = color ? ` style="background:#${color};border-color:#${color};color:${textColorFor(color)}"` : "";
-  return `<span class="label-chip"${style}>${escapeHtml(label?.name || "label")}</span>`;
+  return `<span class="label-chip"${style}>${escapeHtml(label?.name ? labelValue(label.name) : "label")}</span>`;
 }
 
 function issueRefHtml(ref) {
