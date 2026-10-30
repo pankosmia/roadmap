@@ -633,7 +633,8 @@ async function onDrop(event) {
   if (issue && version) await dropOnColumn(issue, version);
 }
 
-async function moveIssue(issue, version, { restoreParent = null } = {}) {
+// An explicit subIssues list (an undo) skips the question about the subissues of a closing or reopening issue.
+async function moveIssue(issue, version, { restoreParent = null, subIssues = null } = {}) {
   if (!accessToken) {
     openAuthDialog();
     return;
@@ -665,6 +666,15 @@ async function moveIssue(issue, version, { restoreParent = null } = {}) {
 
   notice.hidden = true;
 
+  let withSubIssues = subIssues || [];
+  if (!subIssues && stateChange.state) {
+    withSubIssues = stateChange.state === "closed" ? await chooseSubIssuesToClose(issue) : await chooseSubIssuesToReopen(issue);
+    if (!withSubIssues) {
+      renderBoard();
+      return;
+    }
+  }
+
   try {
     labels = await rebaseLabels(issue, issue.labels, labels);
     const updated = await githubRequest(
@@ -678,14 +688,16 @@ async function moveIssue(issue, version, { restoreParent = null } = {}) {
     );
     const index = issues.findIndex((item) => item.id === issue.id);
     if (index !== -1) issues[index] = updated;
+    const subResult = await changeSubIssues(withSubIssues, stateChange.state, "completed");
     saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
     refreshPanel();
     showUndo(`Moved #${updated.number} to ${issueColumn(updated)}.`, async () => {
-      await moveIssue(updated, previous);
+      await moveIssue(updated, previous, { subIssues: subResult.done });
       if (restoreParent) await nestIssue(issues.find((item) => item.id === updated.id) || updated, parentByUrl(restoreParent));
     });
+    noteSubIssueFailures(updated, subResult.failed, stateChange.state);
   } catch (error) {
     showNotice(`Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`, true);
     renderBoard();
@@ -743,12 +755,22 @@ function isClosed(issue) {
   return issue.state === "closed";
 }
 
-// An issue is archived 30 days after closing (or after its last update, when it is open in the Done flow),
-// or at once when it is closed and its version has no Done column.
-function isArchived(issue) {
+// What the issue alone calls for: archived 30 days after closing (or after its last update, when it is open
+// in the Done flow), or at once when it is closed and its version has no Done column.
+function isArchivedAlone(issue) {
   if (!DONE_VERSIONS.includes(issueVersion(issue))) return isClosed(issue);
   if (issueFlow(issue) !== DONE_FLOW) return false;
   return Date.now() - Date.parse(isClosed(issue) ? issue.closed_at : issue.updated_at) > ARCHIVE_AFTER_MS;
+}
+
+// A subissue is archived with its parent, never before. Every open issue is loaded, so a parent that is not loaded
+// is already archived and the subissue follows its own rule.
+function isArchived(issue, seen = new Set([issue.id])) {
+  if (!isArchivedAlone(issue)) return false;
+  const parent = issue.parent_issue_url ? issues.find((item) => item.url === issue.parent_issue_url) : null;
+  if (!parent || seen.has(parent.id)) return true;
+  seen.add(parent.id);
+  return isArchived(parent, seen);
 }
 
 // Only version pages have a Done column, so the main board shows open issues only.
@@ -780,7 +802,8 @@ function issueEndpoint(issue) {
   return `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/${issue.number}`;
 }
 
-async function changeIssueState(issue, body, { duplicateOf = null, undoLabels = null } = {}) {
+// withSubIssues are closed or reopened together with the issue, following body.state.
+async function changeIssueState(issue, body, { duplicateOf = null, undoLabels = null, withSubIssues = [] } = {}) {
   if (!accessToken) {
     openAuthDialog();
     return false;
@@ -811,14 +834,18 @@ async function changeIssueState(issue, body, { duplicateOf = null, undoLabels = 
       accessToken
     );
     const merged = mergeUpdatedIssue(issue, updated);
+    const subResult = await changeSubIssues(withSubIssues, body.state, body.state_reason);
     saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
     refreshTimelineSoon();
     if (undoLabels) {
-      const message = isArchived(merged) ? `Closed #${merged.number} and moved to the archives.` : `Closed #${merged.number}.`;
-      showUndo(message, () => undoClose(merged, undoLabels, commentId));
+      const count = subResult.done.length;
+      const together = count > 0 ? ` with ${count} ${count === 1 ? "subissue" : "subissues"}` : "";
+      const moved = isArchived(merged) ? " and moved to the archives" : "";
+      showUndo(`Closed #${merged.number}${together}${moved}.`, () => undoClose(merged, undoLabels, commentId, subResult.done));
     }
+    noteSubIssueFailures(merged, subResult.failed, body.state);
     return true;
   } catch (error) {
     const message = `Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`;
@@ -835,17 +862,20 @@ async function closeIssue(issue, reason, duplicateOf = null) {
   // Wait for queued label changes so that the Done flow is not overwritten by an older save.
   await runIssueSave(issue);
   const current = issues.find((item) => item.id === issue.id) || issue;
+  const withSubIssues = await chooseSubIssuesToClose(current);
+  if (!withSubIssues) return false;
   const undoLabels = current.labels.map((label) => label.name);
   return changeIssueState(
     current,
     { state: "closed", state_reason: reason, labels: labelsForClose(current) },
-    { duplicateOf, undoLabels }
+    { duplicateOf, undoLabels, withSubIssues }
   );
 }
 
-// Undoing a close as duplicate also deletes the "Duplicate of …" comment that was added.
-async function undoClose(issue, labels, commentId) {
-  if (!(await reopenIssue(issue, labels)) || !commentId) return;
+// Undoing a close also reopens the subissues closed with the issue, and deletes the "Duplicate of …" comment that was added.
+async function undoClose(issue, labels, commentId, closedSubIssues = []) {
+  if (!(await reopenIssue(issue, labels, { withSubIssues: closedSubIssues }))) return;
+  if (!commentId) return;
   const [owner, repository] = repoOf(issue);
   try {
     await githubRequest(
@@ -859,8 +889,181 @@ async function undoClose(issue, labels, commentId) {
 }
 
 // Without labels, the issue keeps its current ones (so a reopened issue stays in the Done flow).
-function reopenIssue(issue, labels = null) {
-  return changeIssueState(issue, { state: "open", state_reason: "reopened", ...(labels ? { labels } : {}) });
+function reopenIssue(issue, labels = null, { withSubIssues = [] } = {}) {
+  return changeIssueState(issue, { state: "open", state_reason: "reopened", ...(labels ? { labels } : {}) }, { withSubIssues });
+}
+
+// The reopening asked for by the user, which offers to reopen the subissues closed together with the issue.
+async function requestReopen(issue, labels = null) {
+  const withSubIssues = await chooseSubIssuesToReopen(issue);
+  if (!withSubIssues) return false;
+  return reopenIssue(issue, labels, { withSubIssues });
+}
+
+// Subissues closed within this time of their parent are taken as closed together with it.
+const SUBISSUE_CLOSE_WINDOW_MS = 5 * 60 * 1000;
+
+// All the descendants, read from GitHub because the board holds only some of them.
+async function fetchDescendants(issue, seen = new Set([issue.id]), depth = 0) {
+  const children = (await fetchAllPages(`${issueApiUrl(repoOf(issue).join("/"), issue.number)}/sub_issues`)).filter((child) => !seen.has(child.id));
+  children.forEach((child) => seen.add(child.id));
+  if (depth + 1 >= SUBISSUE_MAX_DEPTH) return children;
+  const nested = await Promise.all(children.filter(hasSubIssues).map((child) => fetchDescendants(child, seen, depth + 1)));
+  return [...children, ...nested.flat()];
+}
+
+// Resolves to the subissues to change along with the issue: none when the user keeps them as they are,
+// or null when the user cancels. Without a token the request goes on, to ask for one.
+async function chooseSubIssues(issue, { pick, headline, copy, allLabel, onlyLabel }) {
+  if (subIssueDialog?.resolve) return null;
+  if (!accessToken || !hasSubIssues(issue)) return [];
+  let found;
+  stateChangeBusy = true;
+  refreshPanel();
+  try {
+    found = pick(await fetchDescendants(issue));
+  } catch (error) {
+    showNotice(`Could not check the subissues of ${repoOf(issue)[1]}#${issue.number}: ${apiErrorMessage(error)}`, true);
+    return null;
+  } finally {
+    stateChangeBusy = false;
+    refreshPanel();
+  }
+  if (found.length === 0) return [];
+  const count = found.length === 1 ? "1 subissue" : `${found.length} subissues`;
+  return askAboutSubIssues({
+    headline,
+    copy: copy(count),
+    entries: found,
+    allLabel,
+    onlyLabel: onlyLabel(issue)
+  });
+}
+
+function chooseSubIssuesToClose(issue) {
+  return chooseSubIssues(issue, {
+    pick: (descendants) => descendants.filter((item) => !isClosed(item)).map((item) => ({ issue: item })),
+    headline: "Close open subissues too?",
+    copy: (count) => `This issue has ${count} still open. Close them along with it?`,
+    allLabel: "Close all",
+    onlyLabel: (parent) => `Close #${parent.number} only`
+  });
+}
+
+function chooseSubIssuesToReopen(issue) {
+  const closedAt = Date.parse(issue.closed_at);
+  return isClosed(issue)
+    ? chooseSubIssues(issue, {
+        pick: (descendants) =>
+          descendants
+            .filter((item) => isClosed(item) && Math.abs(Date.parse(item.closed_at) - closedAt) <= SUBISSUE_CLOSE_WINDOW_MS)
+            .map((item) => ({ issue: item })),
+        headline: "Reopen subissues too?",
+        copy: (count) => `${count} closed at the same time as this issue. Reopen them along with it?`,
+        allLabel: "Reopen all",
+        onlyLabel: (parent) => `Reopen #${parent.number} only`
+      })
+    : Promise.resolve([]);
+}
+
+let subIssueDialog = null;
+
+function ensureSubIssueDialog() {
+  if (subIssueDialog) return subIssueDialog;
+  subIssueDialog = document.createElement("md-dialog");
+  subIssueDialog.className = "duplicate-dialog";
+  subIssueDialog.innerHTML = `
+    <div slot="headline"></div>
+    <div slot="content" class="duplicate-content">
+      <p class="dialog-copy"></p>
+      <div class="duplicate-results subissue-choice-list"></div>
+    </div>
+    <div slot="actions">
+      <md-text-button class="subissue-cancel" type="button">Cancel</md-text-button>
+      <md-outlined-button class="subissue-only" type="button"></md-outlined-button>
+      <md-filled-button class="subissue-all" type="button"></md-filled-button>
+    </div>
+  `;
+  document.body.append(subIssueDialog);
+  const answerWith = (answer) => {
+    subIssueDialog.answer = answer;
+    subIssueDialog.close();
+  };
+  subIssueDialog.querySelector(".subissue-cancel").addEventListener("click", () => answerWith(null));
+  subIssueDialog.querySelector(".subissue-only").addEventListener("click", () => answerWith([]));
+  subIssueDialog.querySelector(".subissue-all").addEventListener("click", () => answerWith(subIssueDialog.entries));
+  // Escape and a click outside close the dialog too, which cancels.
+  subIssueDialog.addEventListener("closed", () => {
+    const resolve = subIssueDialog.resolve;
+    const answer = subIssueDialog.answer ?? null;
+    subIssueDialog.resolve = null;
+    subIssueDialog.answer = null;
+    if (resolve) resolve(answer);
+  });
+  return subIssueDialog;
+}
+
+function askAboutSubIssues({ headline, copy, entries, allLabel, onlyLabel }) {
+  const dialog = ensureSubIssueDialog();
+  dialog.entries = entries;
+  dialog.answer = null;
+  dialog.querySelector('[slot="headline"]').textContent = headline;
+  dialog.querySelector(".dialog-copy").textContent = copy;
+  dialog.querySelector(".subissue-all").textContent = allLabel;
+  dialog.querySelector(".subissue-only").textContent = onlyLabel;
+  const list = dialog.querySelector(".subissue-choice-list");
+  list.replaceChildren();
+  for (const { issue } of entries) {
+    const row = document.createElement("div");
+    row.className = "duplicate-option";
+    row.innerHTML = `${statusIconHtml(issue)}<span class="duplicate-title">${escapeHtml(issue.title)}</span><span class="duplicate-ref">${escapeHtml(displayRepo(repoOf(issue).join("/")))}#${issue.number}</span>`;
+    list.append(row);
+  }
+  return new Promise((resolve) => {
+    dialog.resolve = resolve;
+    dialog.show();
+  });
+}
+
+function subIssueRefText(subIssue) {
+  return `${repoOf(subIssue)[1]}#${subIssue.number}`;
+}
+
+// Applies each change one after the other, which spares GitHub's rate limits. A failure does not stop the others.
+async function changeSubIssues(entries, state, reason) {
+  const result = { done: [], failed: [] };
+  if (entries.length === 0) return result;
+  const closing = state === "closed";
+  // A subissue closed along with a duplicate is not a duplicate itself.
+  const stateReason = closing ? (reason === "duplicate" ? "not_planned" : reason || "completed") : "reopened";
+  for (const entry of entries) {
+    const subIssue = liveIssue(entry.issue);
+    const previousLabels = subIssue.labels.map((label) => label.name);
+    const labels = closing ? labelsForClose(subIssue) : entry.labels;
+    try {
+      const body = { state, state_reason: stateReason };
+      if (labels) body.labels = await rebaseLabels(subIssue, subIssue.labels, labels);
+      const updated = await githubRequest(
+        issueEndpoint(subIssue),
+        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+        accessToken
+      );
+      const merged = mergeUpdatedIssue(subIssue, updated);
+      replaceInOrders(merged);
+      adjustSummary(merged.parent_issue_url, 0, closing ? 1 : -1);
+      result.done.push({ issue: merged, labels: previousLabels });
+    } catch (error) {
+      result.failed.push({ issue: subIssue, message: apiErrorMessage(error) });
+    }
+  }
+  return result;
+}
+
+function noteSubIssueFailures(issue, failed, state) {
+  if (failed.length === 0) return;
+  const list = failed.map((item) => `${subIssueRefText(item.issue)} (${item.message})`).join(", ");
+  const action = state === "closed" ? "closed" : "reopened";
+  showNotice(`#${issue.number} was updated, but these subissues could not be ${action}: ${list}`, true);
 }
 
 let stateChangeBusy = false;
@@ -901,7 +1104,7 @@ function setupCloseControls(panel) {
   });
   panel.querySelector(".reopen-button").addEventListener("click", () => {
     const issue = currentIssue();
-    if (issue) reopenIssue(issue);
+    if (issue) requestReopen(issue);
   });
 }
 
@@ -1068,8 +1271,9 @@ async function loadMoreArchive() {
 }
 
 // Called when an issue changes, so that an issue closed outside a Done column joins the list at once.
+// The search counts a subissue on its own; archivedIssues() hides it while its parent is not archived.
 function noteArchiveChange(issue) {
-  if (!archive.sources || !isArchived(issue) || archive.ids.includes(issue.id)) return;
+  if (!archive.sources || !isArchivedAlone(issue) || archive.ids.includes(issue.id)) return;
   archive.ids.unshift(issue.id);
   archive.total += 1;
 }
@@ -2094,7 +2298,7 @@ function changeFlow(issue, flow, labels) {
   }
   const closed = isClosed(issue);
   if (flow === DONE_FLOW && !closed) closeIssue(issue, "completed");
-  else if (flow !== DONE_FLOW && closed) reopenIssue(issue, labels);
+  else if (flow !== DONE_FLOW && closed) requestReopen(issue, labels);
   else patchIssue(issue, { labels });
 }
 

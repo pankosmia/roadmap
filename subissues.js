@@ -32,6 +32,13 @@ function orderedSubIssues(parent) {
   return loaded.map((item) => known.get(item.id) || item);
 }
 
+// Keeps a cached list in step with a subissue that changed, so that the list shows it without waiting for GitHub.
+function replaceInOrders(updated) {
+  for (const [parentId, list] of subIssueOrders) {
+    subIssueOrders.set(parentId, list.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)));
+  }
+}
+
 function findKnownIssue(id) {
   const local = issues.find((item) => item.id === id);
   if (local) return local;
