@@ -2658,6 +2658,7 @@ a.tl-actor:hover,
   flex-direction: column;
   padding: 0;
   overflow: hidden;
+  box-sizing: border-box;
   border: 0;
   border-radius: var(--md-sys-shape-lg);
   background: var(--md-sys-color-surface-container-high);
@@ -2678,25 +2679,33 @@ a.tl-actor:hover,
 .notif-header h4 { flex: 1 1 0; margin: 0; font: var(--md-type-title-medium); }
 
 .notif-tabs {
-  display: flex;
   flex: none;
-  gap: 4px;
-  padding: 4px 12px 8px;
+  padding: 4px 16px 8px;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
+.notif-tab-group {
+  display: inline-flex;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
 .notif-tab {
-  padding: 6px 14px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 16px;
+  height: 32px;
+  padding: 0 16px;
+  border: 0;
   background: transparent;
-  color: var(--md-sys-color-on-surface-variant);
+  color: var(--md-sys-color-on-surface);
   font: var(--md-type-label-large);
   cursor: pointer;
 }
 
-.notif-tab[aria-selected="true"] {
-  border-color: transparent;
+.notif-tab + .notif-tab { border-left: 1px solid var(--md-sys-color-outline); }
+.notif-tab:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent); }
+.notif-tab:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: -2px; }
+
+.notif-tab[aria-pressed="true"] {
   background: var(--md-sys-color-secondary-container);
   color: var(--md-sys-color-on-secondary-container);
 }
@@ -2716,15 +2725,27 @@ a.tl-actor:hover,
   min-height: 96px;
   margin: 0;
   padding: 4px 0;
+  overflow-x: hidden;
   overflow-y: auto;
   list-style: none;
 }
 
 .notif-row {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 0;
   padding-right: 4px;
+}
+
+.notif-refresh.loading md-icon { animation: notif-spin 1s linear infinite; }
+
+@keyframes notif-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notif-refresh.loading md-icon { animation: none; opacity: .5; }
 }
 
 .notif-row.unread { background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent); }
@@ -2796,7 +2817,7 @@ a.tl-actor:hover,
 }
 
 .notif-empty md-icon { --md-icon-size: 32px; }
-.notif-empty p { margin: 0; font: var(--md-type-body-medium); }
+.notif-empty p { min-width: 0; margin: 0; overflow-wrap: anywhere; font: var(--md-type-body-medium); }
 .notif-token-link { color: var(--md-sys-color-primary); font: var(--md-type-label-large); }
 
 .notif-footer {
