@@ -919,7 +919,7 @@ async function submitComment(stateAction = null) {
   timeline.posting = false;
   renderTimeline();
   if (stateAction === "close") await closeIssue(issue, "completed");
-  else if (stateAction === "reopen") await reopenIssue(issue);
+  else if (stateAction === "reopen") await requestReopen(issue);
   refreshTimelineSoon();
 }
 

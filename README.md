@@ -37,7 +37,12 @@ GitHub). Once connected, the panel lets you:
 
 Closing an issue (Close button, Flow menu or moving it to Done) shows a snackbar
 with **Undo**, which reopens it with its previous labels (and deletes the
-"Duplicate of …" comment when it was closed as duplicate). On Next and Current
+"Duplicate of …" comment when it was closed as duplicate). When the issue has open
+subissues (at any depth), a dialog lists them first: **Close all** closes them with
+the issue, **Close #N only** leaves them open, and Cancel closes nothing. Undo then
+reopens the subissues closed with it. Reopening an issue (Reopen button, leaving
+the Done flow) offers the same choice for its subissues closed within five minutes
+of it. On Next and Current
 pages a closed issue gets the `Flow : Done` label and stays in the Done column
 (moving a card into Done closes it, moving a closed card out reopens it; the column
 reminds it at the bottom). The main page shows open issues only. Reopening with the
@@ -47,7 +52,10 @@ Version goes straight to the archives, and the snackbar says so.
 The **Archives** button (main and version pages) opens the **Archived issues (N)**
 dialog. An issue is archived 30 days after it was closed, or, when it is still open
 in the Done flow of Next or Current, 30 days after its last update; an issue closed
-with a Backlog or Unassigned Version is archived at once. Archived issues are loaded
+with a Backlog or Unassigned Version is archived at once. A subissue is archived only
+when its parent is archived: while the parent is open or still on the board, a closed
+subissue stays under it, whatever its own Version. (N may count such subissues until
+they have been loaded.) Archived issues are loaded
 from GitHub 100 at a time, with a **Load 100 more** button at the end of the list
 (GitHub search returns at most 1,000 issues per query).
 
