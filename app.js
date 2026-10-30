@@ -439,6 +439,7 @@ function renderBoard() {
       applyCollapsed();
     });
     applyCollapsed();
+    column.addEventListener("dragenter", onDragEnter);
     column.addEventListener("dragover", onDragOver);
     column.addEventListener("dragleave", onDragLeave);
     column.addEventListener("drop", onDrop);
@@ -459,8 +460,8 @@ function renderBoard() {
 function subIssueProgress(issue) {
   const summary = issue.sub_issues_summary;
   if (summary && summary.total > 0) return { done: summary.completed, total: summary.total };
-  const loaded = subIssuesOf(issue).length;
-  return loaded > 0 ? { done: 0, total: loaded } : null;
+  const loaded = subIssuesOf(issue);
+  return loaded.length > 0 ? { done: loaded.filter(isClosed).length, total: loaded.length } : null;
 }
 
 const RELATIVE_TIME = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -608,6 +609,11 @@ function showDropIndicator(column, y) {
   indicator.style.top = `${Math.min(Math.max(top, listRect.top), listRect.bottom) - 2}px`;
 }
 
+// A drop is accepted anywhere on the column, header included; the browser also needs dragenter to be accepted.
+function onDragEnter(event) {
+  event.preventDefault();
+}
+
 function onDragOver(event) {
   event.preventDefault();
   event.dataTransfer.dropEffect = "move";
@@ -626,23 +632,25 @@ function onDragLeave(event) {
 async function onDrop(event) {
   event.preventDefault();
   const version = event.currentTarget.dataset.dropVersion;
+  // The dragged issue is read from the drag state: the drag data can be unreadable, and a subissue may not be a loaded issue.
   const issueId = Number(event.dataTransfer.getData("text/plain"));
-  const issue = issues.find((item) => item.id === issueId);
+  const issue = dragState?.issue || issues.find((item) => item.id === issueId);
   event.currentTarget.closest(".column").classList.remove("drag-over");
   removeDropIndicator();
   if (issue && version) await dropOnColumn(issue, version);
 }
 
 // An explicit subIssues list (an undo) skips the question about the subissues of a closing or reopening issue.
-async function moveIssue(issue, version, { restoreParent = null, subIssues = null } = {}) {
+// Returns true when the issue was moved and the Undo snackbar is showing.
+async function moveIssue(issue, version, { restoreParent = null, subIssues = null, silent = false } = {}) {
   if (!accessToken) {
     openAuthDialog();
-    return;
+    return false;
   }
   const previous = issueColumn(issue);
   // On a version page, an issue without this page's Version label (a subissue taken out of its parent) still needs it.
   const needsVersionLabel = Boolean(detailVersion) && issueVersion(issue) !== detailVersion;
-  if (!COLUMNS.includes(version) || (previous === version && !needsVersionLabel)) return;
+  if (!COLUMNS.includes(version) || (previous === version && !needsVersionLabel)) return false;
 
   const [owner, repository] = issue.repository_url.split("/").slice(-2);
   let labels;
@@ -671,7 +679,7 @@ async function moveIssue(issue, version, { restoreParent = null, subIssues = nul
     withSubIssues = stateChange.state === "closed" ? await chooseSubIssuesToClose(issue) : await chooseSubIssuesToReopen(issue);
     if (!withSubIssues) {
       renderBoard();
-      return;
+      return false;
     }
   }
 
@@ -687,20 +695,28 @@ async function moveIssue(issue, version, { restoreParent = null, subIssues = nul
       accessToken
     );
     const index = issues.findIndex((item) => item.id === issue.id);
-    if (index !== -1) issues[index] = updated;
+    if (index !== -1) {
+      noteStateChange(issues[index], updated);
+      issues[index] = updated;
+    }
     const subResult = await changeSubIssues(withSubIssues, stateChange.state, "completed");
     saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
     refreshPanel();
-    showUndo(`Moved #${updated.number} to ${issueColumn(updated)}.`, async () => {
-      await moveIssue(updated, previous, { subIssues: subResult.done });
+    noteSubIssueFailures(updated, subResult.failed, stateChange.state);
+    if (silent) return false;
+    // A subissue taken out of its parent by the same drop is reported once, with this move.
+    const removed = restoreParent ? ` and removed it from #${numberFromUrl(restoreParent)}` : "";
+    showUndo(`Moved #${updated.number} to ${issueColumn(updated)}${removed}.`, async () => {
+      await moveIssue(updated, previous, { subIssues: subResult.done, silent: Boolean(restoreParent) });
       if (restoreParent) await nestIssue(issues.find((item) => item.id === updated.id) || updated, parentByUrl(restoreParent));
     });
-    noteSubIssueFailures(updated, subResult.failed, stateChange.state);
+    return true;
   } catch (error) {
     showNotice(`Could not update ${repository}#${issue.number}: ${apiErrorMessage(error)}`, true);
     renderBoard();
+    return false;
   }
 }
 
@@ -1050,7 +1066,6 @@ async function changeSubIssues(entries, state, reason) {
       );
       const merged = mergeUpdatedIssue(subIssue, updated);
       replaceInOrders(merged);
-      adjustSummary(merged.parent_issue_url, 0, closing ? 1 : -1);
       result.done.push({ issue: merged, labels: previousLabels });
     } catch (error) {
       result.failed.push({ issue: subIssue, message: apiErrorMessage(error) });
@@ -1469,7 +1484,7 @@ function textColorFor(hex) {
 function labelChipHtml(label) {
   const color = /^[0-9a-f]{6}$/i.test(label.color || "") ? label.color : "";
   const style = color ? ` style="background:#${color};border-color:#${color};color:${textColorFor(color)}"` : "";
-  return `<span class="label-chip"${style} title="${escapeHtml(label.name)}">${escapeHtml(labelValue(label.name))}</span>`;
+  return `<span class="label-chip"${style}>${escapeHtml(labelValue(label.name))}</span>`;
 }
 
 // Card chips always follow this order: Type, Stack, Priority, then the other labels.
@@ -2126,7 +2141,7 @@ window.addEventListener("beforeunload", (event) => {
   event.preventDefault();
 });
 
-function mergeUpdatedIssue(issue, updated) {
+function mergeUpdatedIssue(issue, updated, { adjustParent = true } = {}) {
   const index = issues.findIndex((item) => item.id === issue.id);
   const base = index === -1 ? issue : issues[index];
   const merged = { ...base, ...updated };
@@ -2136,6 +2151,7 @@ function mergeUpdatedIssue(issue, updated) {
     merged.labels = base.labels;
     merged.assignees = base.assignees;
   }
+  if (adjustParent) noteStateChange(base, merged);
   if (index !== -1) issues[index] = merged;
   noteArchiveChange(merged);
   return merged;

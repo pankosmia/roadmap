@@ -157,6 +157,8 @@ function hasPendingSave(issueId) {
 function mergeRemoteBatch({ items, snapshot, startedAt }, changes) {
   const known = new Map(issues.map((issue) => [issue.id, issue]));
   const seen = new Set();
+  const mergedIds = new Set();
+  const stateFlips = [];
   for (const item of items) {
     seen.add(item.id);
     const local = known.get(item.id);
@@ -169,9 +171,16 @@ function mergeRemoteBatch({ items, snapshot, startedAt }, changes) {
       continue;
     }
     if (hasPendingSave(local.id) || Date.parse(item.updated_at) <= Date.parse(local.updated_at)) continue;
-    const merged = mergeUpdatedIssue(local, item);
+    const merged = mergeUpdatedIssue(local, item, { adjustParent: false });
     known.set(item.id, merged);
     changes.push({ before: local, after: merged });
+    mergedIds.add(merged.id);
+    if (local.parent_issue_url && isClosed(local) !== isClosed(merged)) stateFlips.push({ before: local, after: merged });
+  }
+  // A subissue closed or reopened on GitHub does not always bring its parent along; the parent's count follows it.
+  for (const { before, after } of stateFlips) {
+    const parent = issues.find((issue) => issue.url === before.parent_issue_url);
+    if (parent && !mergedIds.has(parent.id)) noteStateChange(before, after);
   }
   if (!snapshot) return;
 
