@@ -291,7 +291,7 @@ function relationRowHtml(kind, item, disabled) {
   return `
     <li class="relation-row">
       ${statusIconHtml(item)}
-      <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener"><span class="relation-title">${escapeHtml(item.title)}</span>
+      <a class="relation-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener" data-issue-id="${item.id}" data-repo="${escapeHtml(item.repo)}" data-number="${item.number}"><span class="relation-title">${escapeHtml(item.title)}</span>
         <span class="relation-ref">${escapeHtml(displayRepo(item.repo))}#${item.number}</span></a>
       <md-icon-button class="relation-remove" data-remove-kind="${kind}" data-remove-id="${item.id}" aria-label="Remove ${escapeHtml(displayRepo(item.repo))}#${item.number}" ${disabled}><md-icon>close</md-icon></md-icon-button>
     </li>`;

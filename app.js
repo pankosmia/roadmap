@@ -247,6 +247,7 @@ async function loadIssues({ force = false } = {}) {
       if (previousPulls.has(issue.id)) issue.pulls = previousPulls.get(issue.id);
     }
     issues = results;
+    pinTabIssues();
     markFullSync(startedAt);
     resetArchive();
     saveIssuesCache();
@@ -1594,8 +1595,11 @@ function ensurePanel() {
   panel.innerHTML = `
     <header class="panel-header">
       <md-icon-button class="panel-close" aria-label="Close panel"><md-icon>close</md-icon></md-icon-button>
-      <div class="panel-ref"></div>
-      <md-text-button class="panel-github-link" target="_blank">View on GitHub<md-icon slot="icon">open_in_new</md-icon></md-text-button>
+      <div class="panel-tabs">
+        <div class="panel-tab-list" role="tablist" aria-label="Open issues"></div>
+      </div>
+      <md-icon-button class="panel-tabs-all" aria-label="All open issues" aria-haspopup="menu" aria-expanded="false" hidden><md-icon>arrow_drop_down</md-icon></md-icon-button>
+      <md-text-button class="panel-github-link" target="_blank" title="View on GitHub"><span class="panel-github-label">View on GitHub</span><md-icon slot="icon">open_in_new</md-icon></md-text-button>
     </header>
     <div class="panel-content">
       <div class="panel-main">
@@ -1648,7 +1652,9 @@ function ensurePanel() {
   panelElements = {
     overlay,
     panel,
-    ref: panel.querySelector(".panel-ref"),
+    tabs: panel.querySelector(".panel-tabs"),
+    tabList: panel.querySelector(".panel-tab-list"),
+    tabsAll: panel.querySelector(".panel-tabs-all"),
     link: panel.querySelector(".panel-github-link"),
     error: panel.querySelector(".panel-error"),
     readonly: panel.querySelector(".panel-readonly"),
@@ -1676,10 +1682,11 @@ function ensurePanel() {
   });
   panelElements.save.addEventListener("click", saveTitleAndDescription);
   setupDescriptionCard(panel);
+  setupPanelTabs(panel);
   setupCloseControls(panel);
   setupPanelResizer(panel, panelElements.resizer);
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && panelIssueId !== null && !document.querySelector("md-dialog[open]")) requestClosePanel();
+    if (event.key === "Escape" && panelIssueId !== null && !tabsMenu?.open && !document.querySelector("md-dialog[open]")) requestClosePanel();
   });
   return panelElements;
 }
@@ -1767,13 +1774,25 @@ async function renderMarkdownPreview(text) {
 }
 
 function openPanel(issue) {
+  // Opened from inside the panel (a relationship, a subissue…), an issue gets its own tab.
+  if (panelIssueId !== null) {
+    openIssueTab(issue);
+    return;
+  }
+  startPanelTabs(issue);
+  showPanelIssue(issue, null);
+  panelElements.title.focus();
+}
+
+// Fills the panel with one issue. `saved` is the state kept by its tab when the user comes back to it.
+function showPanelIssue(issue, saved) {
   const elements = ensurePanel();
   flushIssueSaves();
   // A closed subissue only comes from its parent's list; the panel looks issues up here (the board hides it, see isOnBoard).
   if (!issue.draft && !issues.some((item) => item.id === issue.id)) issues.push(issue);
   panelIssueId = issue.id;
-  panelMeta = { labels: null, assignees: null };
-  panelErrors = new Set();
+  panelMeta = saved?.meta || { labels: null, assignees: null };
+  panelErrors = saved?.errors || new Set();
   resetPanelExtras();
   resetTimeline();
   resetDescription(issue);
@@ -1783,11 +1802,13 @@ function openPanel(issue) {
   descriptionEditor.showWrite();
   descriptionEditor.value = issue.body || "";
   elements.error.hidden = true;
+  if (saved) restorePanelState(issue, saved);
   elements.overlay.hidden = false;
   elements.panel.hidden = false;
   refreshPanel();
-  elements.title.focus();
-  loadPanelMeta(issue);
+  if (saved) finishPanelRestore(saved);
+  else resetPanelScroll();
+  if (panelMeta.labels === null || panelMeta.assignees === null) loadPanelMeta(issue);
 }
 
 let draftRepoNames = [DEFAULT_REPOSITORY];
@@ -1798,12 +1819,16 @@ async function openNewIssuePanel(parent = null) {
     openAuthDialog();
     return;
   }
+  if (panelTabs.some((tab) => tab.id === DRAFT_ID)) {
+    switchToTab(DRAFT_ID);
+    return;
+  }
   const repository = parent ? repoOf(parent)[1] : DEFAULT_REPOSITORY;
   draftIssue = newDraftIssue(repository, parent);
   draftRepoNames = [repository];
   openPanel(draftIssue);
   const names = await loadOrganizationRepos();
-  if (panelIssueId !== DRAFT_ID) return;
+  if (!draftIssue) return;
   draftRepoNames = names;
   if (picker?.anchorKey === "repository") refreshPicker(true);
 }
@@ -1884,7 +1909,7 @@ async function requestClosePanel() {
   if (panelIssueId === null || panelClosing) return;
   panelClosing = true;
   try {
-    if (!hasUnsavedChanges() || (await confirmDiscard())) closePanel();
+    if (!anyTabHasUnsavedChanges() || (await confirmDiscard())) closePanel();
   } finally {
     panelClosing = false;
   }
@@ -1896,6 +1921,7 @@ function closePanel() {
   closePicker(false);
   panelIssueId = null;
   draftIssue = null;
+  endPanelTabs();
   panelElements.overlay.hidden = true;
   panelElements.panel.hidden = true;
 }
@@ -1907,8 +1933,8 @@ function refreshPanel() {
     closePanel();
     return;
   }
-  const [owner, repository] = repoOf(issue);
-  panelElements.ref.textContent = issue.draft ? "New issue" : `${displayRepo(`${owner}/${repository}`)} #${issue.number}`;
+  const [, repository] = repoOf(issue);
+  renderPanelTabs();
   panelElements.link.hidden = Boolean(issue.draft);
   if (!issue.draft) panelElements.link.href = issue.html_url;
   panelElements.repoField.hidden = !issue.draft;
@@ -2013,7 +2039,7 @@ async function createIssue(draft, title) {
     saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();
-    closePanel();
+    removePanelTab(DRAFT_ID);
     const failures = await applyDraftRelationships(created, draft.relationships);
     const parentItem = draft.relationships.parent;
     if (parentItem && !failures.some((failure) => failure.startsWith(`${parentItem.repo}#${parentItem.number} `))) noteSubIssueAdded(parentItem, created);

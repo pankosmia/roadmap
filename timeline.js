@@ -904,10 +904,13 @@ async function submitComment(stateAction = null) {
         { method: "POST", headers: { "Content-Type": "application/json", Accept: TIMELINE_ACCEPT }, body: JSON.stringify({ body: text }) },
         accessToken
       );
+      timeline.pages.get(timeline.lastPage)?.push({ ...comment, event: "commented", actor: comment.user });
       if (panelTimeline === timeline) {
-        timeline.pages.get(timeline.lastPage)?.push({ ...comment, event: "commented", actor: comment.user });
         timelineUi.editor.value = "";
         timelineUi.editor.showWrite();
+      } else {
+        // The user went to another tab meanwhile; the typed text is cleared when this tab is shown again.
+        timeline.postedWhileAway = true;
       }
     }
   } catch (error) {
