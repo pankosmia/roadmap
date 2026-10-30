@@ -79,6 +79,7 @@ async function runSync() {
     setSyncStatus();
     // Refreshes only when its own 5-minute cache is stale.
     loadOpenPulls();
+    loadNotifications();
   } catch (error) {
     liveSync.failures += 1;
     if (error.rateLimited && error.retryAt) liveSync.pausedUntil = error.retryAt;

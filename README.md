@@ -120,7 +120,7 @@ panel width.
 
 Dropdown options are read from each repository's existing labels. A warning icon
 appears when an expected label is missing from the repository. The **+ Add**
-button on the main page creates an issue (default repository: `roadmap`) in
+button (main and version pages) creates an issue (default repository: `roadmap`) in
 Unassigned and opens it in the side panel. Cards show their labels in their
 GitHub colors, without the text before the ":" (for example "Spec'd" for
 "Flow : Spec'd"). Chips follow a fixed order: Type, Stack, Priority, then the other
@@ -174,8 +174,8 @@ differ from the view that was active before they were touched: the default view,
 or the saved view that was applied. Filters and views are stored in the browser's
 local storage (`roadmap-filters`) and shared by all pages.
 
-The **Pull requests** button, to the right of **Archives** (main and version pages),
-opens a dialog listing every open pull request of the organization (`open-pulls.js`,
+The toolbar buttons read **Add**, **Notifications**, **Pull requests** (a tonal
+button) and **Archives**. The **Pull requests** button opens a dialog listing every open pull request of the organization (`open-pulls.js`,
 one paginated GraphQL search, loaded with the board and cached for 5 minutes,
 **Refresh** to reload; needs a connected token). Each row shows the state icon,
 title, repository, number, author and age, and links to the pull request. Pull
@@ -191,6 +191,22 @@ Hours are calendar hours (thresholds are constants in `open-pulls.js`):
 - **Waiting for review**: a non-draft pull request with a pending review request
   (or no review at all) for 48 hours or more, counted from the last review request or
   "ready for review" event, or from its creation.
+
+The **Notifications** button (`notifications.js`, main and version pages) opens a
+menu with the GitHub notifications of the connected account, limited to the
+organization, like GitHub's inbox: a thread is **unread** (tinted row with a dot,
+counted in the red badge on the button, capped at 99+) until it is opened or marked
+as read with its envelope button; it then stays listed, no longer highlighted; the
+**check** button marks it as **done** and it goes away. Done is sent to GitHub
+after the 8 second **Undo** delay (or when the page is left), since GitHub's API
+cannot undo it. **Unread** / **All** tabs, **Mark all as read** (sent per
+repository, so other organizations are untouched) and **Refresh** are in the menu.
+Clicking a row opens the issue in the side panel when it is loaded on the board,
+and the thread on GitHub otherwise. The list is read with `GET /notifications?all=true`
+(up to 300 threads), refreshed with the live sync (about every minute) and cached
+for the browser session. GitHub only serves notifications to a **classic token with
+the `notifications` scope** (plus `public_repo` to edit issues); with a fine-grained
+token the menu explains this. GitHub's API has no "mark as unread".
 
 On cards and in the Archives dialog, the linked pull request count is a filled badge
 in the color of the pull request state.

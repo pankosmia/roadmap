@@ -2048,7 +2048,8 @@ md-icon.pr-closed { color: var(--pr-color); }
 .pulls-open md-icon { --md-icon-size: 20px; flex: none; }
 .pulls-issues { display: flex; flex: none; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
 
-.pulls-badge {
+.pulls-badge,
+.notifications-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2063,7 +2064,8 @@ md-icon.pr-closed { color: var(--pr-color); }
   font: var(--md-type-label-small);
 }
 
-.pulls-badge[hidden] { display: none; }
+.pulls-badge[hidden],
+.notifications-badge[hidden] { display: none; }
 
 .pulls-issue-chip,
 .pulls-orphan-chip,
@@ -2646,3 +2648,163 @@ a.tl-actor:hover,
 .timeline-readonly md-icon {
   --md-icon-size: 18px;
 }
+
+/* Notifications menu: a popover under the Notifications button. Unread rows are tinted, with a dot; read rows are dimmed. */
+.notif-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--md-sys-shape-lg);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: var(--md-elevation-3);
+}
+
+.notif-menu:not(:popover-open) { display: none; }
+
+.notif-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0;
+  padding: 8px 8px 0 16px;
+}
+
+.notif-header h4 { flex: 1 1 0; margin: 0; font: var(--md-type-title-medium); }
+
+.notif-tabs {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  padding: 4px 12px 8px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.notif-tab {
+  padding: 6px 14px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-type-label-large);
+  cursor: pointer;
+}
+
+.notif-tab[aria-selected="true"] {
+  border-color: transparent;
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.notif-status {
+  flex: none;
+  margin: 0;
+  padding: 8px 16px 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-type-body-small);
+}
+
+.notif-status[hidden] { display: none; }
+
+.notif-list {
+  flex: 1 1 auto;
+  min-height: 96px;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.notif-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding-right: 4px;
+}
+
+.notif-row.unread { background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent); }
+
+.notif-open {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 4px 10px 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notif-open:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent); }
+.notif-open:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: -2px; }
+
+.notif-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.notif-row.unread .notif-dot { background: var(--md-sys-color-primary); }
+.notif-type { --md-icon-size: 20px; flex: none; color: var(--md-sys-color-on-surface-variant); }
+.notif-text { display: flex; flex: 1 1 0; flex-direction: column; min-width: 0; }
+
+.notif-title {
+  overflow: hidden;
+  font: var(--md-type-body-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notif-row.unread .notif-title { font-weight: 700; }
+.notif-row:not(.unread) .notif-title { color: var(--md-sys-color-on-surface-variant); }
+
+.notif-meta {
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-type-body-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notif-row md-icon-button { flex: none; --md-icon-button-icon-size: 20px; --md-icon-button-state-layer-height: 36px; --md-icon-button-state-layer-width: 36px; }
+
+/* Mark as read only shows on hover or focus where there is a pointer; touch screens always show it. */
+@media (hover: hover) {
+  .notif-read { opacity: 0; }
+  .notif-row:hover .notif-read,
+  .notif-row:focus-within .notif-read { opacity: 1; }
+}
+
+.notif-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 24px;
+  color: var(--md-sys-color-on-surface-variant);
+  text-align: center;
+}
+
+.notif-empty md-icon { --md-icon-size: 32px; }
+.notif-empty p { margin: 0; font: var(--md-type-body-medium); }
+.notif-token-link { color: var(--md-sys-color-primary); font: var(--md-type-label-large); }
+
+.notif-footer {
+  flex: none;
+  padding: 8px 16px;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  font: var(--md-type-label-large);
+}
+
+.notif-footer a { display: inline-flex; align-items: center; gap: 4px; color: var(--md-sys-color-primary); text-decoration: none; }
+.notif-footer md-icon { --md-icon-size: 16px; }

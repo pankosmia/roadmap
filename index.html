@@ -25,6 +25,7 @@
     <script src="timeline.js" defer></script>
     <script src="development.js" defer></script>
     <script src="open-pulls.js" defer></script>
+    <script src="notifications.js" defer></script>
     <script src="panel-settings.js" defer></script>
     <script src="filters.js" defer></script>
     <script src="subissues.js" defer></script>
@@ -68,8 +69,9 @@
         <div class="toolbar-row">
           <div class="heading-actions">
             <md-filled-button id="add-button" type="button"><md-icon slot="icon">add</md-icon>Add</md-filled-button>
+            <md-filled-tonal-button id="notifications-button" type="button" aria-haspopup="dialog" aria-expanded="false"><md-icon slot="icon">notifications</md-icon>Notifications<span id="notifications-badge" class="notifications-badge" hidden></span></md-filled-tonal-button>
+            <md-filled-tonal-button id="pulls-button" type="button"><md-icon slot="icon">merge_type</md-icon>Pull requests<span id="pulls-badge" class="pulls-badge" hidden></span></md-filled-tonal-button>
             <md-outlined-button id="archives-button" type="button"><md-icon slot="icon">archive</md-icon>Archives</md-outlined-button>
-            <md-outlined-button id="pulls-button" type="button"><md-icon slot="icon">merge_type</md-icon>Pull requests<span id="pulls-badge" class="pulls-badge" hidden></span></md-outlined-button>
           </div>
           <div id="filter-bar" class="filter-bar" role="group" aria-label="Filters"></div>
         </div>
@@ -89,7 +91,7 @@
     <md-dialog id="auth-dialog" aria-labelledby="auth-title">
       <div slot="headline" id="auth-title">Connect GitHub</div>
       <form id="auth-form" slot="content">
-        <p class="dialog-copy">Viewing is public. To edit issues, connect a GitHub personal access token with Issues read and write access to the repositories you want to edit.</p>
+        <p class="dialog-copy">Viewing is public. To edit issues, connect a GitHub personal access token with Issues read and write access to the repositories you want to edit. To see your notifications, use a classic token that also has the notifications scope.</p>
         <md-outlined-text-field id="token-input" name="token" type="password" label="Personal access token" autocomplete="off" spellcheck="false" required autofocus></md-outlined-text-field>
         <label class="check-label"><md-checkbox id="remember-input"></md-checkbox> Remember me on this browser</label>
         <p class="token-note">By default your token is kept for this browser session only. If you tick "Remember me", it is stored in this browser's local storage until you disconnect.</p>

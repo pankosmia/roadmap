@@ -144,7 +144,7 @@ async function githubRequestWithResponse(url, options = {}, token = "") {
     else if (reset > 0) failure.retryAt = reset * 1000;
     throw failure;
   }
-  return { data: response.status === 204 ? null : await response.json(), response };
+  return { data: response.status === 204 || response.status === 205 ? null : await response.json(), response };
 }
 
 async function githubRequest(url, options = {}, token = "") {
@@ -1412,6 +1412,7 @@ async function connectToken(event) {
     renderBoard();
     refreshPanel();
     loadOpenPulls({ force: true });
+    loadNotifications({ force: true });
     if (loadFailed) loadIssues({ force: true });
     else loadPullRequests({ force: true });
   } catch (error) {
@@ -1431,6 +1432,7 @@ function disconnectToken() {
   setAuthState("");
   clearIssuePulls();
   clearOpenPulls();
+  clearNotifications();
   renderBoard();
   refreshPanel();
 }
@@ -2433,6 +2435,7 @@ async function restoreToken() {
     setAuthState(user.login);
     renderBoard();
     refreshPanel();
+    loadNotifications();
   } catch (error) {
     // Keep the saved token on rate limits and network errors; only drop it when GitHub rejects it.
     if (error.status === 401) clearStoredToken();
