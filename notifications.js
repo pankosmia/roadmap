@@ -10,6 +10,7 @@ const NOTIFICATION_OPEN_TTL = 15 * 1000;
 // Done is only sent once the Undo snackbar (8 s, see showUndo) is gone.
 const NOTIFICATION_UNDO_MS = 8000;
 const NOTIFICATION_DONE_LIMIT = 300;
+const NOTIFICATION_TAB_KEY = "roadmap-notifications-tab";
 const NOTIFICATION_CACHE_KEY = "roadmap-notifications-cache";
 const NOTIFICATION_DONE_KEY = "roadmap-notifications-done";
 const NOTIFICATION_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=public_repo,notifications&description=Pankosmia%20roadmap";
@@ -58,6 +59,22 @@ function saveNotificationsCache() {
   }
 }
 
+function readNotificationsTab() {
+  try {
+    return localStorage.getItem(NOTIFICATION_TAB_KEY) === "unread" ? "unread" : "all";
+  } catch {
+    return "all";
+  }
+}
+
+function saveNotificationsTab() {
+  try {
+    localStorage.setItem(NOTIFICATION_TAB_KEY, notificationsTab);
+  } catch {
+    // Storage may be unavailable; the choice then lasts only for this page view.
+  }
+}
+
 // Threads marked as done, with the time of their last update: a done thread is hidden even if GitHub
 // still lists it, until new activity makes it come back.
 function readDoneThreads() {
@@ -99,7 +116,7 @@ let notificationsError = "";
 // True when GitHub refuses the token (fine-grained tokens, or no `notifications` scope).
 let notificationsDenied = false;
 let notificationsMenu = null;
-let notificationsTab = "unread";
+let notificationsTab = readNotificationsTab();
 const pendingDone = new Map();
 
 function notificationFromThread(thread) {
@@ -365,15 +382,15 @@ function renderNotifications() {
   const unread = items.filter((item) => item.unread);
   const shown = notificationsTab === "unread" ? unread : items;
 
-  element.querySelector('[data-tab="unread"]').textContent = `Unread (${unread.length})`;
   element.querySelector('[data-tab="all"]').textContent = `All (${items.length})`;
-  for (const tab of element.querySelectorAll(".notif-tab")) {
-    const selected = tab.dataset.tab === notificationsTab;
-    tab.setAttribute("aria-selected", String(selected));
-    tab.tabIndex = selected ? 0 : -1;
-  }
+  element.querySelector('[data-tab="unread"]').textContent = `Unread (${unread.length})`;
+  for (const tab of element.querySelectorAll(".notif-tab")) tab.setAttribute("aria-pressed", String(tab.dataset.tab === notificationsTab));
   element.querySelector(".notif-mark-all").disabled = unread.length === 0;
-  element.querySelector(".notif-refresh").disabled = notificationsLoading || !accessToken || notificationsDenied;
+  // The refresh icon spins while loading; the button keeps its size and place, so nothing in the menu moves.
+  const refresh = element.querySelector(".notif-refresh");
+  refresh.disabled = !accessToken || notificationsDenied;
+  refresh.classList.toggle("loading", notificationsLoading);
+  refresh.setAttribute("aria-busy", String(notificationsLoading));
 
   const scrollTop = list.scrollTop;
   const focusedId = list.contains(document.activeElement) ? document.activeElement.closest(".notif-row")?.dataset.id : null;
@@ -400,7 +417,6 @@ function renderNotifications() {
     list.innerHTML = shown.map(notificationRowHtml).join("");
   }
   if (notificationsError && notifications.time > 0) statusText = `Could not refresh (${notificationsError}). Showing the last loaded list.`;
-  else if (notificationsLoading && notifications.time > 0) statusText = "Refreshing…";
   else if (notifications.truncated) statusText = `Showing the ${NOTIFICATION_PAGE_SIZE * NOTIFICATION_MAX_PAGES} most recent notifications.`;
   status.textContent = statusText;
   status.hidden = statusText === "";
@@ -409,13 +425,13 @@ function renderNotifications() {
   // After an action the focused row is gone or has changed: keep the keyboard where it was.
   if (focusedIndex >= 0 && !list.contains(document.activeElement)) {
     const targets = list.querySelectorAll(".notif-open");
-    (targets[Math.min(focusedIndex, targets.length - 1)] || element.querySelector(".notif-tab[aria-selected='true']")).focus();
+    (targets[Math.min(focusedIndex, targets.length - 1)] || element.querySelector(".notif-refresh")).focus();
   }
 }
 
 function positionNotificationsMenu(element, trigger) {
   const rect = trigger.getBoundingClientRect();
-  const width = Math.min(420, window.innerWidth - 16);
+  const width = Math.min(600, window.innerWidth - 16);
   const below = window.innerHeight - rect.bottom - 12;
   const above = rect.top - 12;
   const openAbove = below < 240 && above > below;
@@ -468,9 +484,11 @@ function openNotificationsMenu(trigger) {
       <md-icon-button class="notif-mark-all" aria-label="Mark all as read" title="Mark all as read"><md-icon>done_all</md-icon></md-icon-button>
       <md-icon-button class="notif-refresh" aria-label="Refresh notifications" title="Refresh"><md-icon>refresh</md-icon></md-icon-button>
     </div>
-    <div class="notif-tabs" role="tablist" aria-label="Notification filter">
-      <button type="button" class="notif-tab" role="tab" data-tab="unread"></button>
-      <button type="button" class="notif-tab" role="tab" data-tab="all"></button>
+    <div class="notif-tabs">
+      <div class="notif-tab-group" role="group" aria-label="Notification filter">
+        <button type="button" class="notif-tab" data-tab="all" aria-pressed="false"></button>
+        <button type="button" class="notif-tab" data-tab="unread" aria-pressed="false"></button>
+      </div>
     </div>
     <p class="notif-status" role="status" hidden></p>
     <ul class="notif-list"></ul>
@@ -496,7 +514,6 @@ function openNotificationsMenu(trigger) {
   notificationsMenu = state;
 
   element.addEventListener("click", handleNotificationsClick);
-  notificationsTab = unreadNotificationCount() > 0 || !accessToken ? "unread" : "all";
   renderNotifications();
   loadNotifications({ maxAge: NOTIFICATION_OPEN_TTL });
 }
@@ -508,6 +525,7 @@ function handleNotificationsClick(event) {
   const tab = target.closest(".notif-tab");
   if (tab) {
     notificationsTab = tab.dataset.tab;
+    saveNotificationsTab();
     renderNotifications();
   } else if (target.closest(".notif-mark-all")) markAllNotificationsRead();
   else if (target.closest(".notif-refresh")) loadNotifications({ force: true });

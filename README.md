@@ -199,7 +199,9 @@ counted in the red badge on the button, capped at 99+) until it is opened or mar
 as read with its envelope button; it then stays listed, no longer highlighted; the
 **check** button marks it as **done** and it goes away. Done is sent to GitHub
 after the 8 second **Undo** delay (or when the page is left), since GitHub's API
-cannot undo it. **Unread** / **All** tabs, **Mark all as read** (sent per
+cannot undo it. **All** / **Unread** button group (All by default, the choice is remembered in
+local storage as `roadmap-notifications-tab`), the refresh button (its icon spins
+while loading), **Mark all as read** (sent per
 repository, so other organizations are untouched) and **Refresh** are in the menu.
 Clicking a row opens the issue in the side panel when it is loaded on the board,
 and the thread on GitHub otherwise. The list is read with `GET /notifications?all=true`
