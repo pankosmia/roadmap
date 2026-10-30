@@ -1399,6 +1399,45 @@ md-outlined-text-field {
   border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
+.panel-title-heading {
+  margin: 0;
+  color: var(--md-sys-color-on-surface);
+  font: var(--md-type-headline-small);
+  overflow-wrap: anywhere;
+}
+
+.desc-card .tl-card-header .tl-avatar {
+  margin-right: 6px;
+}
+
+.desc-card .tl-comment-body {
+  min-height: 24px;
+}
+
+.desc-status {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+}
+
+.desc-status md-circular-progress {
+  --md-circular-progress-size: 24px;
+}
+
+.desc-error {
+  color: var(--md-sys-color-error);
+}
+
+.desc-body .task-list-item-checkbox {
+  margin: 0 6px 2px -2px;
+  vertical-align: middle;
+  accent-color: var(--md-sys-color-primary);
+}
+
+.desc-body .task-list-item-checkbox:not(:disabled) {
+  cursor: pointer;
+}
+
 .panel-save-row {
   display: flex;
   justify-content: flex-end;
