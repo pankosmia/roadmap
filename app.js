@@ -1608,13 +1608,25 @@ function ensurePanel() {
           <md-icon>arrow_drop_down</md-icon>
         </button>
         <div class="status-pill" hidden></div>
+        <h2 class="panel-title-heading" hidden></h2>
         <md-outlined-text-field class="panel-title-input" label="Title" type="text" autocomplete="off"></md-outlined-text-field>
+        <section class="desc-card tl-card" aria-label="Description" hidden>
+          <header class="tl-card-header">
+            <span class="tl-card-title desc-meta"></span>
+            <span class="tl-badge-text">Author</span>
+            <div class="tl-actions">
+              <md-icon-button class="tl-action desc-edit" aria-label="Edit description" title="Edit description"><md-icon>edit</md-icon></md-icon-button>
+            </div>
+          </header>
+          <div class="desc-body"></div>
+        </section>
         <div class="panel-save-row">
           <div class="close-split">
             <md-outlined-button class="close-main" type="button"><md-icon slot="icon">check_circle</md-icon>Close issue</md-outlined-button>
             <md-outlined-icon-button class="close-menu-toggle" type="button" aria-label="More close options" aria-haspopup="menu" aria-expanded="false"><md-icon>arrow_drop_down</md-icon></md-outlined-icon-button>
           </div>
           <md-outlined-button class="reopen-button" type="button" hidden>Reopen issue</md-outlined-button>
+          <md-text-button class="panel-cancel" type="button" hidden>Cancel</md-text-button>
           <md-filled-button class="panel-save" type="button">Save</md-filled-button>
         </div>
       </div>
@@ -1641,6 +1653,12 @@ function ensurePanel() {
     error: panel.querySelector(".panel-error"),
     readonly: panel.querySelector(".panel-readonly"),
     title: panel.querySelector(".panel-title-input"),
+    heading: panel.querySelector(".panel-title-heading"),
+    descCard: panel.querySelector(".desc-card"),
+    descMeta: panel.querySelector(".desc-meta"),
+    descBody: panel.querySelector(".desc-body"),
+    descEdit: panel.querySelector(".desc-edit"),
+    cancel: panel.querySelector(".panel-cancel"),
     repoField: panel.querySelector(".panel-repo-field"),
     resizer: panel.querySelector(".panel-resizer"),
     save: panel.querySelector(".panel-save"),
@@ -1657,6 +1675,7 @@ function ensurePanel() {
     clearResolvedValidationError();
   });
   panelElements.save.addEventListener("click", saveTitleAndDescription);
+  setupDescriptionCard(panel);
   setupCloseControls(panel);
   setupPanelResizer(panel, panelElements.resizer);
   document.addEventListener("keydown", (event) => {
@@ -1757,6 +1776,7 @@ function openPanel(issue) {
   panelErrors = new Set();
   resetPanelExtras();
   resetTimeline();
+  resetDescription(issue);
   closePicker(false);
   elements.title.error = false;
   elements.title.value = issue.title;
@@ -1901,6 +1921,8 @@ function refreshPanel() {
   panelElements.save.disabled = !accessToken;
   renderStatusControls(issue);
   renderPanelControls();
+  ensureDescription(issue);
+  renderDescription(issue);
   ensureTimeline(issue);
 }
 
@@ -1958,6 +1980,7 @@ async function saveTitleAndDescription() {
   if (updated) {
     panelElements.title.value = updated.title;
     descriptionEditor.value = updated.body || "";
+    if (panelIssueId === issue.id) finishDescriptionEdit();
   }
 }
 
@@ -2166,10 +2189,14 @@ async function patchIssueNow(issue, body) {
   try {
     const updated = await githubRequest(
       `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/${issue.number}`,
-      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      { method: "PATCH", headers: { "Content-Type": "application/json", Accept: TIMELINE_ACCEPT }, body: JSON.stringify(body) },
       accessToken
     );
-    const merged = mergeUpdatedIssue(issue, updated);
+    // The rendered body only feeds the description card; it must not end up in the board's issues or their cache.
+    const { body_html: html, ...plain } = updated;
+    delete plain.body_text;
+    noteDescriptionSaved(issue, plain, html);
+    const merged = mergeUpdatedIssue(issue, plain);
     saveIssuesCache();
     renderBoard();
     summary.textContent = summaryText();

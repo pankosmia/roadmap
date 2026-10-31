@@ -16,7 +16,8 @@ the user disconnects.
 Clicking an issue opens it in a right-anchored side panel (it does not open
 GitHub). Once connected, the panel lets you:
 
-- edit the title and description (with a Save button);
+- read the description as on GitHub and edit the title and description on demand
+  (pencil button, then Save or Cancel);
 - add or remove assignees from a GitHub-style popover (search, checkmarks,
   selected users first), opened by the Assignees heading (shown above Workflow);
 - change Version, Flow and Blocked (one menu chip each in the Workflow area,
@@ -121,6 +122,16 @@ mentionable in it (GraphQL `mentionableUsers`, searched by login or name while y
 type, cached for the session). ↑ / ↓ move, Enter or Tab insert `@login `, Esc closes
 the list (and does not close the panel), and clicking a person works too. The list
 only opens after whitespace or a `(`, so an email address does not trigger it.
+
+**Description** (`description.js`): an existing issue opens in read mode, like a GitHub
+issue. The title is a heading and the opening message is a card with its author, date,
+an "edited" marker (needs a token, from GraphQL `lastEditedAt`) and the Markdown rendered
+by GitHub. Task-list checkboxes can be ticked: the board re-reads the description, checks
+nobody changed it, then saves at once (and restores the box with an error if GitHub
+refuses). A box is disabled when the Markdown and the rendered HTML do not line up, or
+without a token. The pencil button switches the title and description to the editors
+(**Save** / **Cancel**; Cancel asks before discarding changes). A new issue still opens
+in edit mode. The rendered body is kept out of the board's issue cache.
 
 Menus open and close without animation.
 
