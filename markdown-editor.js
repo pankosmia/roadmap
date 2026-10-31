@@ -24,7 +24,48 @@ function lineEnd(text, position) {
   return end === -1 ? text.length : end;
 }
 
-function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, label = "Description", placeholder = "Leave a description" }) {
+const MENTION_LIMIT = 5;
+const MENTION_REMOTE_DELAY = 250;
+const MENTION_NAME = /^[\w-]{0,39}$/;
+const MIRRORED_STYLES = [
+  "fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing", "lineHeight", "textTransform", "wordSpacing", "tabSize",
+  "paddingTop", "paddingRight", "paddingBottom", "paddingLeft"
+];
+let mentionIds = 0;
+
+// Viewport position of the character at `index` in a textarea, measured on a hidden copy of its text.
+function caretPoint(textarea, index) {
+  const style = getComputedStyle(textarea);
+  const mirror = document.createElement("div");
+  for (const name of MIRRORED_STYLES) mirror.style[name] = style[name];
+  Object.assign(mirror.style, {
+    position: "absolute",
+    visibility: "hidden",
+    top: "0",
+    left: "-9999px",
+    boxSizing: "border-box",
+    width: `${textarea.clientWidth}px`,
+    whiteSpace: "pre-wrap",
+    overflowWrap: "break-word"
+  });
+  mirror.textContent = textarea.value.slice(0, index);
+  const marker = document.createElement("span");
+  marker.textContent = "\u200b";
+  mirror.append(marker);
+  document.body.append(mirror);
+  const rect = textarea.getBoundingClientRect();
+  const point = {
+    left: rect.left + textarea.clientLeft + marker.offsetLeft - textarea.scrollLeft,
+    top: rect.top + textarea.clientTop + marker.offsetTop - textarea.scrollTop,
+    height: marker.offsetHeight
+  };
+  mirror.remove();
+  return point;
+}
+
+// `mentions` is optional and turns on GitHub-style "@" suggestions: { local(query), remote(query) }.
+// local returns the people known at once, remote a promise of more (or null).
+function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mentions = null, label = "Description", placeholder = "Leave a description" }) {
   const element = document.createElement("div");
   element.className = "md-editor";
   element.innerHTML = `
@@ -51,6 +92,9 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, label =
   let previewRequest = 0;
   let previewing = false;
   let disabled = false;
+
+  const mention = { open: false, start: 0, query: "", local: [], remote: [], items: [], active: 0, timer: 0, request: 0 };
+  let mentionList = null;
 
   function replaceRange(start, end, text, selectionStart, selectionEnd) {
     input.focus();
@@ -156,8 +200,201 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, label =
     }
   }
 
+  function mentionContext() {
+    const caret = input.selectionStart;
+    if (!mentions || disabled || previewing || caret === 0 || caret !== input.selectionEnd) return null;
+    const start = input.value.lastIndexOf("@", caret - 1);
+    if (start === -1) return null;
+    const query = input.value.slice(start + 1, caret);
+    const before = input.value[start - 1];
+    if (!MENTION_NAME.test(query) || (before !== undefined && !/[\s(]/.test(before))) return null;
+    return { start, query };
+  }
+
+  function createMentionList() {
+    mentionList = document.createElement("div");
+    mentionList.className = "md-mention-menu";
+    mentionList.id = `md-mention-${++mentionIds}`;
+    mentionList.setAttribute("popover", "manual");
+    // Keeps the focus in the textarea while the list is clicked.
+    mentionList.addEventListener("mousedown", (event) => event.preventDefault());
+    mentionList.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-index]");
+      if (option) chooseMention(mention.items[Number(option.dataset.index)]);
+    });
+    mentionList.addEventListener("pointermove", (event) => {
+      const option = event.target.closest("[data-index]");
+      if (option && Number(option.dataset.index) !== mention.active) {
+        mention.active = Number(option.dataset.index);
+        paintActiveMention();
+      }
+    });
+    element.append(mentionList);
+  }
+
+  function paintActiveMention() {
+    mentionList.querySelectorAll("[data-index]").forEach((option) => {
+      const active = Number(option.dataset.index) === mention.active;
+      option.classList.toggle("is-active", active);
+      option.setAttribute("aria-selected", String(active));
+      if (active) input.setAttribute("aria-activedescendant", option.id);
+    });
+  }
+
+  function placeMentionList() {
+    const point = caretPoint(input, mention.start);
+    const width = mentionList.offsetWidth;
+    const height = mentionList.offsetHeight;
+    const left = Math.max(8, Math.min(point.left, window.innerWidth - width - 8));
+    const below = point.top + point.height + 4;
+    const top = below + height > window.innerHeight - 8 && point.top - height - 4 > 8 ? point.top - height - 4 : below;
+    mentionList.style.left = `${left}px`;
+    mentionList.style.top = `${top}px`;
+  }
+
+  function renderMentions() {
+    const seen = new Set();
+    mention.items = [...mention.local, ...mention.remote]
+      .filter((user) => !seen.has(user.login.toLowerCase()) && seen.add(user.login.toLowerCase()))
+      .slice(0, MENTION_LIMIT);
+    if (mention.items.length === 0) {
+      closeMentions();
+      return;
+    }
+    const keep = mention.items.findIndex((user) => user.login === mention.activeLogin);
+    mention.active = keep === -1 ? 0 : keep;
+    if (!mentionList) createMentionList();
+    mentionList.replaceChildren();
+    const list = document.createElement("div");
+    list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "People to mention");
+    mention.items.forEach((user, index) => {
+      const option = document.createElement("div");
+      option.className = "md-mention-option";
+      option.id = `${mentionList.id}-${index}`;
+      option.dataset.index = String(index);
+      option.setAttribute("role", "option");
+      if (user.avatar_url) {
+        const avatar = document.createElement("img");
+        avatar.className = "md-mention-avatar";
+        avatar.src = user.avatar_url;
+        avatar.alt = "";
+        avatar.width = 24;
+        avatar.height = 24;
+        option.append(avatar);
+      }
+      const login = document.createElement("span");
+      login.className = "md-mention-login";
+      login.textContent = user.login;
+      option.append(login);
+      if (user.name) {
+        const name = document.createElement("span");
+        name.className = "md-mention-name";
+        name.textContent = user.name;
+        option.append(name);
+      }
+      list.append(option);
+    });
+    mentionList.append(list);
+    if (!mention.open) {
+      mention.open = true;
+      input.setAttribute("aria-controls", mentionList.id);
+      window.addEventListener("scroll", onMentionScroll, true);
+      window.addEventListener("resize", closeMentions);
+    }
+    if (!mentionList.matches(":popover-open")) mentionList.showPopover();
+    placeMentionList();
+    paintActiveMention();
+  }
+
+  // The textarea scrolls by itself while typing, so only the other scrolls dismiss the list.
+  function onMentionScroll(event) {
+    if (event.target === input) placeMentionList();
+    else closeMentions();
+  }
+
+  function closeMentions() {
+    clearTimeout(mention.timer);
+    mention.request += 1;
+    if (!mention.open) return;
+    mention.open = false;
+    mention.local = [];
+    mention.remote = [];
+    mention.items = [];
+    mentionList.hidePopover();
+    input.removeAttribute("aria-controls");
+    input.removeAttribute("aria-activedescendant");
+    window.removeEventListener("scroll", onMentionScroll, true);
+    window.removeEventListener("resize", closeMentions);
+  }
+
+  function updateMentions() {
+    const context = mentionContext();
+    if (!context) {
+      closeMentions();
+      return;
+    }
+    if (mention.open && context.start === mention.start && context.query === mention.query) return;
+    mention.activeLogin = mention.items[mention.active]?.login;
+    // The list stays hidden while nothing matches, so it does not flash empty before remote people arrive.
+    const changed = context.start !== mention.start || context.query !== mention.query;
+    mention.start = context.start;
+    mention.query = context.query;
+    if (changed) mention.remote = [];
+    mention.local = mentions.local?.(context.query) || [];
+    renderMentions();
+    clearTimeout(mention.timer);
+    const request = ++mention.request;
+    mention.timer = setTimeout(async () => {
+      let found = null;
+      try {
+        found = await mentions.remote?.(context.query);
+      } catch {
+        found = null;
+      }
+      if (!found || request !== mention.request) return;
+      mention.remote = found;
+      renderMentions();
+    }, MENTION_REMOTE_DELAY);
+  }
+
+  function chooseMention(user) {
+    if (!user) return;
+    const { start } = mention;
+    const end = input.selectionStart;
+    closeMentions();
+    const text = `@${user.login} `;
+    replaceRange(start, end, text, start + text.length, start + text.length);
+  }
+
+  // Returns true when the key was used by the open suggestion list.
+  function handleMentionKey(event) {
+    if (!mention.open) return false;
+    const count = mention.items.length;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMentions();
+      return true;
+    }
+    if (count === 0 || event.altKey || event.ctrlKey || event.metaKey) return false;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      mention.active = (mention.active + (event.key === "ArrowDown" ? 1 : count - 1)) % count;
+      paintActiveMention();
+      return true;
+    }
+    if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey) {
+      event.preventDefault();
+      chooseMention(mention.items[mention.active]);
+      return true;
+    }
+    return false;
+  }
+
   input.addEventListener("keydown", (event) => {
     if (event.isComposing) return;
+    if (handleMentionKey(event)) return;
     const modifier = event.ctrlKey || event.metaKey;
     if (modifier && !event.altKey && !event.shiftKey) {
       const shortcuts = { b: "bold", i: "italic", k: "link", e: "code" };
@@ -216,6 +453,7 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, label =
 
   function setPreviewing(value) {
     previewing = value;
+    closeMentions();
     input.hidden = value;
     preview.hidden = !value;
     toolbar.classList.toggle("is-hidden", value);
@@ -224,7 +462,17 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, label =
     else previewRequest += 1;
   }
 
-  input.addEventListener("input", () => onInput?.());
+  input.addEventListener("input", () => {
+    updateMentions();
+    onInput?.();
+  });
+  if (mentions) {
+    input.addEventListener("click", updateMentions);
+    input.addEventListener("keyup", (event) => {
+      if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) updateMentions();
+    });
+    input.addEventListener("blur", closeMentions);
+  }
 
   tabs.addEventListener("change", () => {
     const wantsPreview = tabs.activeTabIndex === 1;
@@ -243,6 +491,7 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, label =
     },
     set disabled(value) {
       disabled = value;
+      closeMentions();
       input.disabled = value;
       toolbar.querySelectorAll("md-icon-button").forEach((button) => {
         button.disabled = value;

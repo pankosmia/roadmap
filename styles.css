@@ -1264,6 +1264,54 @@ md-outlined-text-field {
   overflow-y: auto;
 }
 
+/* "@" suggestions; the popover API puts the list above the panel and its scrolling areas. */
+.md-mention-menu {
+  inset: auto;
+  min-width: 240px;
+  max-width: min(360px, calc(100vw - 16px));
+  margin: 0;
+  padding: 4px 0;
+  border: 0;
+  border-radius: var(--md-sys-shape-md);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: var(--md-elevation-2);
+  overflow: hidden;
+}
+
+.md-mention-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 12px;
+  font: var(--md-type-body-medium);
+  cursor: pointer;
+}
+
+.md-mention-option.is-active {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.md-mention-avatar {
+  flex: none;
+  border-radius: 50%;
+  background: var(--md-sys-color-surface-container-high);
+}
+
+.md-mention-login {
+  font-weight: 500;
+}
+
+.md-mention-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface-variant);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .md-editor-note {
   margin: 0;
   color: var(--md-sys-color-on-surface-variant);

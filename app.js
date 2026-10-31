@@ -1627,7 +1627,8 @@ function ensurePanel() {
   `;
   descriptionEditor = createMarkdownEditor({
     renderPreview: renderMarkdownPreview,
-    onSubmit: saveTitleAndDescription
+    onSubmit: saveTitleAndDescription,
+    mentions: issueMentions
   });
   panel.querySelector(".panel-save-row").before(descriptionEditor.element);
   createTimeline(panel.querySelector(".panel-main"));
