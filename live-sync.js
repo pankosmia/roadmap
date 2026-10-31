@@ -192,7 +192,7 @@ function mergeRemoteBatch({ items, snapshot, startedAt }, changes) {
     (issue) =>
       !seen.has(issue.id) &&
       !keptIds.has(issue.id) &&
-      issue.id !== panelIssueId &&
+      !isTabIssue(issue.id) &&
       !hasPendingSave(issue.id) &&
       Date.parse(issue.updated_at) < recent
   );

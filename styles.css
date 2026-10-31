@@ -1064,10 +1064,113 @@ md-outlined-text-field {
   padding: 12px 16px;
 }
 
-.panel-ref {
+.panel-tabs {
   flex: 1;
+  min-width: 0;
+  --fade-start: 0px;
+  --fade-end: 0px;
+}
+
+.panel-tabs.can-scroll-start { --fade-start: 28px; }
+.panel-tabs.can-scroll-end { --fade-end: 28px; }
+
+/* The tabs scroll sideways; the strip fades out on the side where more tabs are hidden. */
+.panel-tab-list {
+  display: flex;
+  gap: 4px;
+  padding: 2px 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent 100%);
+}
+
+.panel-tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+.panel-tab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  max-width: 220px;
+  border-radius: 16px;
   color: var(--md-sys-color-on-surface-variant);
   font: var(--md-type-title-small);
+}
+
+.panel-tab:hover {
+  background: var(--md-sys-color-surface-container-high);
+}
+
+.panel-tab.is-active {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.panel-tab-main,
+.panel-tab-close {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.panel-tab-main {
+  min-width: 0;
+  height: 32px;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 16px;
+}
+
+.panel-tab-main:has(+ .panel-tab-close) {
+  padding-right: 4px;
+}
+
+.panel-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-tab-dirty {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--md-sys-color-primary);
+}
+
+.panel-tab-close {
+  flex: none;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  padding: 0;
+  border-radius: 50%;
+  opacity: .7;
+}
+
+.panel-tab-close md-icon {
+  --md-icon-size: 16px;
+}
+
+.panel-tab-close:hover,
+.panel-tab-close:focus-visible {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  opacity: 1;
+}
+
+.panel-tab-main:focus-visible,
+.panel-tab-close:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
 }
 
 .issue-panel.is-resizing {
@@ -1867,6 +1970,16 @@ md-outlined-text-field {
   .panel-main {
     padding-inline: 16px;
   }
+}
+
+/* On a narrow panel the tabs need the room of the "View on GitHub" label. */
+@media (max-width: 560px) {
+  .panel-github-label {
+    display: none;
+  }
+
+  .panel-tabs.can-scroll-start { --fade-start: 14px; }
+  .panel-tabs.can-scroll-end { --fade-end: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

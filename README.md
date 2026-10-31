@@ -133,6 +133,18 @@ without a token. The pencil button switches the title and description to the edi
 (**Save** / **Cancel**; Cancel asks before discarding changes). A new issue still opens
 in edit mode. The rendered body is kept out of the board's issue cache.
 
+**Tabs** (`panel-tabs.js`): the top of the panel is a tab strip. Clicking a relationship
+row, or a `#N` / issue link in a description or a comment, opens that issue in a new tab
+on the right instead of GitHub (an issue that is already open just takes focus; Ctrl/Cmd
+or Shift-click still opens GitHub). Each tab keeps its own unsaved title, description,
+comment draft and scroll position. The × button (shown from two tabs), a middle-click or
+Delete closes a tab; the right neighbour, else the left one, takes over, and an unsaved
+tab asks first. A dot marks a background tab with unsaved changes. ← / → / Home / End move
+between tabs. When the tabs do not fit they scroll sideways (fading edges, mouse wheel) and
+an "all open issues" menu appears. The panel's × and Esc close every tab with one prompt.
+"New issue" is a tab of its own and keeps its fields. Issues of other organizations still
+open on GitHub, and so do pull requests.
+
 Menus open and close without animation.
 
 The Settings column is 440px wide and sits next to the description from a 940px
