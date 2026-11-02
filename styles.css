@@ -228,6 +228,10 @@ h1 {
   width: 100%;
 }
 
+#search-clear[hidden] { display: none; }
+
+.search-input input::-webkit-search-cancel-button { display: none; }
+
 .search-input {
   width: min(360px, 100%);
   --md-outlined-text-field-container-shape: 28px;
@@ -488,9 +492,8 @@ body.dragging-issue .column-heading * {
 
 .blocked-icon {
   --md-icon-size: 18px;
-  margin-right: 4px;
+  flex: none;
   color: var(--md-sys-color-error);
-  vertical-align: text-bottom;
 }
 
 .repo-name {
@@ -1866,6 +1869,19 @@ md-outlined-text-field {
   --md-assist-chip-label-text-color: var(--md-sys-color-on-surface);
 }
 
+.menu-chip-button.is-alert {
+  --md-assist-chip-container-color: var(--md-sys-color-error-container);
+  --md-assist-chip-label-text-color: var(--md-sys-color-on-error-container);
+  --md-assist-chip-outline-color: var(--md-sys-color-error);
+  --md-assist-chip-hover-label-text-color: var(--md-sys-color-on-error-container);
+  --md-assist-chip-focus-label-text-color: var(--md-sys-color-on-error-container);
+  --md-assist-chip-pressed-label-text-color: var(--md-sys-color-on-error-container);
+}
+
+.menu-chip-button.is-alert .chip-content md-icon {
+  color: var(--md-sys-color-on-error-container);
+}
+
 .chip-content {
   display: inline-flex;
   align-items: center;
@@ -2216,11 +2232,24 @@ md-icon.pr-closed { color: var(--pr-color); }
 .dev-popover h4 { margin: 0; font: var(--md-type-title-small); }
 .dev-popover .relation-list { gap: 8px; }
 
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+}
+
+.status-row[hidden],
+.panel-blocked[hidden] { display: none; }
+
+.panel-blocked {
+  display: inline-flex;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  align-self: flex-start;
   padding: 4px 12px 4px 8px;
   border-radius: 999px;
   color: #fff;

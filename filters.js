@@ -1,4 +1,4 @@
-// Board filters: Assignee and Repository chips, and the View menu that resets or saves them.
+// Board filters: Assignee, Repository and Blocked chips, and the View menu that resets or saves them.
 // Loaded before app.js; it relies on globals declared there (issues, detailVersion, renderBoard, escapeHtml…).
 // The filters and the saved views are shared by every page through one localStorage entry.
 
@@ -15,14 +15,14 @@ function stringList(value) {
 }
 
 function loadFilterState() {
-  const state = { current: { assignees: [], repos: [] }, views: [], activeViewId: null };
+  const state = { current: { assignees: [], repos: [], blocked: false }, views: [], activeViewId: null };
   try {
     const saved = JSON.parse(localStorage.getItem(FILTERS_KEY));
     if (!saved || typeof saved !== "object") return state;
-    state.current = { assignees: stringList(saved.current?.assignees), repos: stringList(saved.current?.repos) };
+    state.current = { assignees: stringList(saved.current?.assignees), repos: stringList(saved.current?.repos), blocked: saved.current?.blocked === true };
     for (const view of Array.isArray(saved.views) ? saved.views : []) {
       if (typeof view?.id !== "string" || typeof view?.name !== "string") continue;
-      state.views.push({ id: view.id, name: view.name, assignees: stringList(view.assignees), repos: stringList(view.repos) });
+      state.views.push({ id: view.id, name: view.name, assignees: stringList(view.assignees), repos: stringList(view.repos), blocked: view.blocked === true });
     }
     state.activeViewId = state.views.some((view) => view.id === saved.activeViewId) ? saved.activeViewId : null;
   } catch {
@@ -48,17 +48,24 @@ function sameList(first, second) {
 }
 
 function hasActiveFilters() {
-  return filterState.current.assignees.length > 0 || filterState.current.repos.length > 0;
+  const { assignees, repos, blocked } = filterState.current;
+  return assignees.length > 0 || repos.length > 0 || blocked;
 }
 
 // The badge compares the chips with the view that was active before they were touched (the default view is unfiltered).
 function filtersDiffer() {
-  const base = activeView() || { assignees: [], repos: [] };
-  return !sameList(filterState.current.assignees, base.assignees) || !sameList(filterState.current.repos, base.repos);
+  const base = activeView() || { assignees: [], repos: [], blocked: false };
+  const { assignees, repos, blocked } = filterState.current;
+  return !sameList(assignees, base.assignees) || !sameList(repos, base.repos) || blocked !== base.blocked;
+}
+
+function isBlocked(issue) {
+  return issue.labels.some((label) => hasPrefix(label.name, "Blocked"));
 }
 
 function matchesFilters(issue) {
-  const { assignees, repos } = filterState.current;
+  const { assignees, repos, blocked } = filterState.current;
+  if (blocked && !isBlocked(issue)) return false;
   if (assignees.length > 0) {
     const logins = (issue.assignees || []).map((user) => user.login);
     const matches = logins.length > 0 ? logins.some((login) => assignees.includes(login)) : assignees.includes(NO_ASSIGNEE);
@@ -81,10 +88,12 @@ function filterOptions() {
   const assignees = new Map();
   const repos = new Map();
   let unassigned = 0;
+  let blocked = 0;
   for (const issue of issues) {
     if (!isOnBoard(issue) || (detailVersion && issueVersion(issue) !== detailVersion)) continue;
     const repo = repoOf(issue)[1];
     repos.set(repo, (repos.get(repo) || 0) + 1);
+    if (isBlocked(issue)) blocked += 1;
     if (!issue.assignees || issue.assignees.length === 0) unassigned += 1;
     for (const user of issue.assignees || []) {
       const entry = assignees.get(user.login) || { value: user.login, text: user.login, avatar: user.avatar_url, count: 0 };
@@ -105,7 +114,7 @@ function filterOptions() {
     assigneeOptions.unshift({ value: NO_ASSIGNEE, text: "Unassigned", avatar: "", count: unassigned });
   }
   const repoOptions = [...repos].map(([name, count]) => ({ value: name, text: name, avatar: "", count })).sort(byText);
-  return { assignees: assigneeOptions, repos: repoOptions };
+  return { assignees: assigneeOptions, repos: repoOptions, blocked };
 }
 
 function filterItemHtml(kind, option) {
@@ -156,6 +165,11 @@ function syncFilterBar() {
     chip.selected = filterState.current[kind].length > 0;
     chip.setAttribute("aria-label", `${title} filter, ${filterState.current[kind].length} selected`);
   }
+  const { blockedChip } = filterUi;
+  const blockedCount = filterUi.options.blocked;
+  blockedChip.querySelector(".chip-label").textContent = blockedCount > 0 ? `Blocked: ${blockedCount}` : "Blocked";
+  blockedChip.selected = filterState.current.blocked;
+  blockedChip.setAttribute("aria-label", `Blocked filter, ${blockedChip.selected ? "on" : "off"}, ${blockedCount} blocked`);
   for (const item of filterUi.bar.querySelectorAll("md-menu-item[data-filter]")) {
     item.querySelector("md-checkbox").checked = filterState.current[item.dataset.filter].includes(item.dataset.value);
   }
@@ -184,6 +198,7 @@ function viewSummary(view) {
   const parts = [];
   if (view.assignees.length > 0) parts.push(`${view.assignees.length} ${view.assignees.length === 1 ? "assignee" : "assignees"}`);
   if (view.repos.length > 0) parts.push(`${view.repos.length} ${view.repos.length === 1 ? "repository" : "repositories"}`);
+  if (view.blocked) parts.push("Blocked");
   return parts.join(" · ") || "No filters";
 }
 
@@ -219,7 +234,7 @@ function renderViewMenu() {
 
 function applyView(view) {
   filterState.activeViewId = view ? view.id : null;
-  filterState.current = { assignees: view ? [...view.assignees] : [], repos: view ? [...view.repos] : [] };
+  filterState.current = { assignees: view ? [...view.assignees] : [], repos: view ? [...view.repos] : [], blocked: view ? view.blocked : false };
   filtersChanged();
 }
 
@@ -269,7 +284,7 @@ function ensureViewDialog() {
       saveFilterState();
       syncFilterBar();
     } else {
-      const created = { id: newViewId(), name, assignees: [...filterState.current.assignees], repos: [...filterState.current.repos] };
+      const created = { id: newViewId(), name, assignees: [...filterState.current.assignees], repos: [...filterState.current.repos], blocked: filterState.current.blocked };
       filterState.views.push(created);
       filterState.activeViewId = created.id;
       filtersChanged();
@@ -342,6 +357,7 @@ function onViewMenuClick(event) {
     if (!current) return;
     current.assignees = [...filterState.current.assignees];
     current.repos = [...filterState.current.repos];
+    current.blocked = filterState.current.blocked;
     filtersChanged();
   } else if (action === "save") {
     openViewNameDialog(null);
@@ -358,15 +374,16 @@ function initFilters() {
       <md-menu id="view-menu" class="view-menu" anchor="view-button" positioning="popover" quick aria-label="View"></md-menu>
     </div>
     <div class="filter-chip-wrap">
-      <md-filter-chip id="assignee-chip" class="filter-chip" aria-haspopup="menu"><span class="chip-content"><span class="chip-label">Assignee</span><md-icon>arrow_drop_down</md-icon></span></md-filter-chip>
+      <md-filter-chip id="assignee-chip" class="filter-chip" aria-haspopup="menu"><md-icon slot="icon">person</md-icon><span class="chip-content"><span class="chip-label">Assignee</span><md-icon>arrow_drop_down</md-icon></span></md-filter-chip>
       <md-menu id="assignee-menu" class="filter-menu" anchor="assignee-chip" positioning="popover" quick aria-label="Assignee"></md-menu>
     </div>
     <div class="filter-chip-wrap">
-      <md-filter-chip id="repo-chip" class="filter-chip" aria-haspopup="menu"><span class="chip-content"><span class="chip-label">Repository</span><md-icon>arrow_drop_down</md-icon></span></md-filter-chip>
+      <md-filter-chip id="repo-chip" class="filter-chip" aria-haspopup="menu"><md-icon slot="icon">book_2</md-icon><span class="chip-content"><span class="chip-label">Repository</span><md-icon>arrow_drop_down</md-icon></span></md-filter-chip>
       <md-menu id="repo-menu" class="filter-menu" anchor="repo-chip" positioning="popover" default-focus="none" quick aria-label="Repository">
         <div class="filter-search-row"><md-outlined-text-field class="filter-search" type="search" label="Search repositories" autocomplete="off"><md-icon slot="leading-icon">search</md-icon></md-outlined-text-field></div>
       </md-menu>
-    </div>`;
+    </div>
+    <md-filter-chip id="blocked-chip" class="filter-chip blocked-filter-chip" aria-label="Blocked filter"><md-icon slot="icon">stop_circle</md-icon><span class="chip-label">Blocked</span></md-filter-chip>`;
   filterUi = {
     bar,
     viewButton: bar.querySelector("#view-button"),
@@ -377,7 +394,8 @@ function initFilters() {
     repoChip: bar.querySelector("#repo-chip"),
     repoMenu: bar.querySelector("#repo-menu"),
     repoSearch: bar.querySelector(".filter-search"),
-    options: { assignees: [], repos: [] },
+    blockedChip: bar.querySelector("#blocked-chip"),
+    options: { assignees: [], repos: [], blocked: 0 },
     nameDialog: null,
     deleteDialog: null
   };
@@ -400,6 +418,13 @@ function initFilters() {
       if (item) toggleFilterValue(item.dataset.filter, item.dataset.value);
     });
   }
+
+  // The chip keeps its own selected state across clicks; the stored filter is the source of truth.
+  filterUi.blockedChip.addEventListener("click", (event) => {
+    event.stopPropagation();
+    filterState.current.blocked = !filterState.current.blocked;
+    filtersChanged();
+  }, true);
 
   const search = filterUi.repoSearch;
   search.addEventListener("input", renderRepoItems);

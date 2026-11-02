@@ -58,6 +58,7 @@ function saveCollapsedColumns() {
 }
 const TOKEN_KEY = "roadmap-token";
 const searchInput = document.querySelector("#search-input");
+const searchClear = document.querySelector("#search-clear");
 
 function storeToken(token, remember) {
   clearStoredToken();
@@ -529,7 +530,7 @@ function createIssueCard(issue) {
 
   const repository = displayRepo(repoOf(issue).join("/"));
   const number = issue.number;
-  // Version and Flow are the columns; Meta goes top-right and Blocked is an icon before the title.
+  // Version and Flow are the columns; Meta goes top-right and Blocked is an icon before the status icon.
   const shown = issue.labels.filter(
     (label) => !isVersionLabel(label.name) && !hasPrefix(label.name, "Blocked") && !(detailVersion && isFlowLabel(label.name))
   );
@@ -540,12 +541,12 @@ function createIssueCard(issue) {
 
   card.innerHTML = `
     <div class="issue-meta">
-      ${statusIconHtml(issue)}
+      ${blockedIconHtml(issue)}${statusIconHtml(issue)}
       <span class="repo-name" title="${escapeHtml(repository)}">${escapeHtml(repository)}</span>
       <span class="issue-number">#${number}</span>
       ${metaChips ? `<span class="issue-meta-labels" aria-label="Issue markers">${metaChips}</span>` : ""}
     </div>
-    <button class="issue-title" type="button">${blockedIconHtml(issue)}${escapeHtml(issue.title)}</button>
+    <button class="issue-title" type="button">${escapeHtml(issue.title)}</button>
     ${labels ? `<div class="issue-labels" aria-label="Issue labels">${labels}</div>` : ""}
     ${cardFooterHtml(issue)}
   `;
@@ -1125,12 +1126,15 @@ function setupCloseControls(panel) {
 }
 
 function renderStatusControls(issue) {
-  const { statusPill, closeSplit, reopenButton } = panelElements;
-  statusPill.hidden = Boolean(issue.draft);
+  const { statusRow, blockedIcon, statusPill, closeSplit, reopenButton } = panelElements;
+  statusRow.hidden = Boolean(issue.draft);
   closeSplit.hidden = Boolean(issue.draft) || isClosed(issue);
   reopenButton.hidden = Boolean(issue.draft) || !isClosed(issue);
   if (issue.draft) return;
   const status = issueStatus(issue);
+  const blocked = blockedIconHtml(issue);
+  blockedIcon.innerHTML = blocked;
+  blockedIcon.hidden = !blocked;
   statusPill.className = `status-pill status-pill-${status.key}`;
   statusPill.innerHTML = `<md-icon>${status.icon}</md-icon><span>${status.label}</span>`;
   const disabled = !accessToken || stateChangeBusy;
@@ -1438,11 +1442,18 @@ function disconnectToken() {
   refreshPanel();
 }
 
+// The panel's Stack buttons use a shorter text to save space; the label itself is unchanged.
+const SHORT_BUTTON_TEXT = { Stack: { Documentation: "Doc" } };
+
+function buttonText(prefix, value) {
+  return SHORT_BUTTON_TEXT[prefix]?.[value] || value;
+}
+
 const META_LABELS = ["Epic", "WIP"];
 // Button group order; labels that are not listed come last, in GitHub's order.
 const GROUP_ORDER = {
   Type: ["Feature", "Bug", "Tech Debt"],
-  Stack: ["Client", "Server", "Data", "Build", "Documentation"],
+  Stack: ["Client", "Server", "Data", "Dev", "Build", "Documentation"],
   Priority: ["Tweak", "Urgent", "Security"]
 };
 const REQUIRED_GROUPS = [
@@ -1514,7 +1525,7 @@ function blockedIconHtml(issue) {
   if (blocked.length === 0) return "";
   const reason = blocked.map((label) => labelValue(label.name)).join(", ");
   const text = reason.toLowerCase() === "blocked" ? "Blocked" : `Blocked: ${reason}`;
-  return `<md-icon class="blocked-icon" role="img" title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}">dangerous</md-icon>`;
+  return `<md-icon class="blocked-icon" role="img" title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}">stop_circle</md-icon>`;
 }
 
 function repoOf(issue) {
@@ -1611,7 +1622,10 @@ function ensurePanel() {
           <span class="repo-field-value"></span>
           <md-icon>arrow_drop_down</md-icon>
         </button>
-        <div class="status-pill" hidden></div>
+        <div class="status-row" hidden>
+          <span class="panel-blocked" hidden></span>
+          <div class="status-pill"></div>
+        </div>
         <h2 class="panel-title-heading" hidden></h2>
         <md-outlined-text-field class="panel-title-input" label="Title" type="text" autocomplete="off"></md-outlined-text-field>
         <section class="desc-card tl-card" aria-label="Description" hidden>
@@ -1687,6 +1701,8 @@ function ensurePanel() {
     resizer: panel.querySelector(".panel-resizer"),
     top: panel.querySelector(".panel-top"),
     save: panel.querySelector(".panel-save"),
+    statusRow: panel.querySelector(".status-row"),
+    blockedIcon: panel.querySelector(".panel-blocked"),
     statusPill: panel.querySelector(".status-pill"),
     closeSplit: panel.querySelector(".close-split"),
     reopenButton: panel.querySelector(".reopen-button"),
@@ -2303,7 +2319,7 @@ function renderPanelControls() {
   const disabled = locked ? "disabled" : "";
 
   // One chip per setting; it shows the current value and opens a menu with the choices.
-  const menuChip = (id, label, options, current, { warning = "", emptyText = "Select…", noneText = "" } = {}) => {
+  const menuChip = (id, label, options, current, { warning = "", emptyText = "Select…", noneText = "", alert = false } = {}) => {
     const items = noneText ? [{ value: "", text: noneText }, ...options] : options;
     const shown = options.find(({ value }) => value === current)?.text || emptyText;
     return `
@@ -2311,7 +2327,7 @@ function renderPanelControls() {
       <span class="control-label">${label}${warning}</span>
       ${options.length === 0 ? '<p class="empty-note">No labels in this repo.</p>' : `
       <div class="menu-chip">
-        <md-assist-chip id="chip-${id}" class="menu-chip-button" aria-label="${label}: ${escapeHtml(shown)}" aria-haspopup="menu" data-menu="${id}" ${disabled}>
+        <md-assist-chip id="chip-${id}" class="menu-chip-button${alert && current ? " is-alert" : ""}" aria-label="${label}: ${escapeHtml(shown)}" aria-haspopup="menu" data-menu="${id}" ${disabled}>
           <span class="chip-content"><span>${escapeHtml(shown)}</span><md-icon>arrow_drop_down</md-icon></span>
         </md-assist-chip>
         <md-menu id="menu-${id}" anchor="chip-${id}" positioning="popover" quick aria-label="${label}">
@@ -2342,7 +2358,7 @@ function renderPanelControls() {
         <span class="control-label" id="${labelId}">${prefix}${mandatory ? '<span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">(required)</span>' : ""}</span>
         ${options.length === 0 ? '<p class="empty-note">No labels in this repo.</p>' : `
         <div class="connected-group" role="group" aria-labelledby="${labelId}" ${invalid ? `aria-describedby="${labelId}-error"` : ""} data-mode="${mode}" ${required ? 'data-required="true"' : ""}>
-          ${options.map((name) => `<button type="button" class="connected-button" data-group-label="${escapeHtml(name)}" data-prefix="${prefix}" aria-pressed="${names.includes(name)}" title="${escapeHtml(labelValue(name))}" ${disabled}><md-ripple></md-ripple><md-focus-ring></md-focus-ring><span>${escapeHtml(labelValue(name))}</span></button>`).join("")}
+          ${options.map((name) => `<button type="button" class="connected-button" data-group-label="${escapeHtml(name)}" data-prefix="${prefix}" aria-pressed="${names.includes(name)}" title="${escapeHtml(labelValue(name))}" ${disabled}><md-ripple></md-ripple><md-focus-ring></md-focus-ring><span>${escapeHtml(buttonText(prefix, labelValue(name)))}</span></button>`).join("")}
         </div>`}
         ${helper && options.length > 0 ? `<p class="field-helper">${helper}</p>` : ""}
         ${invalid ? `<p class="field-error" id="${labelId}-error" role="alert">${message}</p>` : ""}
@@ -2362,7 +2378,7 @@ function renderPanelControls() {
       <div class="workflow-chips">
         ${menuChip("version", "Version", VERSIONS.map((item) => ({ value: item, text: item })), version, { warning: versionWarning })}
         ${menuChip("flow", "Flow", FLOWS.map((item) => ({ value: item, text: item })), flow, { warning: flowWarning })}
-        ${menuChip("blocked", "Blocked", blockedOptions, blockedCurrent, { noneText: "None" })}
+        ${menuChip("blocked", "Blocked", blockedOptions, blockedCurrent, { noneText: "None", alert: true })}
       </div>
     </section>
     <section class="other-section">
@@ -2493,9 +2509,17 @@ authButton.addEventListener("click", () => {
 authForm.addEventListener("submit", connectToken);
 cancelAuth.addEventListener("click", closeAuthDialog);
 
-searchInput.addEventListener("input", () => {
+function applySearch() {
   searchTerm = searchInput.value.trim().toLowerCase();
+  searchClear.hidden = searchInput.value === "";
   if (issues.length > 0) renderBoard();
+}
+
+searchInput.addEventListener("input", applySearch);
+searchClear.addEventListener("click", () => {
+  searchInput.value = "";
+  applySearch();
+  searchInput.focus();
 });
 
 initFilters();
