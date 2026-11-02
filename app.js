@@ -1630,7 +1630,7 @@ function ensurePanel() {
               <div class="desc-fade" aria-hidden="true"></div>
             </div>
             <div class="desc-more" hidden>
-              <md-text-button class="desc-expand" type="button" aria-expanded="false">Show full description</md-text-button>
+              <md-text-button class="desc-expand" type="button" aria-expanded="false">Expand description</md-text-button>
             </div>
             <div class="desc-reactions"></div>
           </div>
@@ -1650,7 +1650,7 @@ function ensurePanel() {
         <fieldset class="panel-controls"></fieldset>
       </aside>
     </div>
-    <md-filled-tonal-icon-button class="panel-top" aria-label="Back to top" title="Back to top" hidden><md-icon>arrow_upward</md-icon></md-filled-tonal-icon-button>
+    <md-fab class="panel-top" size="small" variant="secondary" aria-label="Back to top" title="Back to top" hidden><md-icon slot="icon">arrow_upward</md-icon></md-fab>
     <div class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Resize panel" tabindex="0"></div>
   `;
   descriptionEditor = createMarkdownEditor({

@@ -1583,23 +1583,16 @@ md-outlined-text-field {
   padding-top: 4px;
 }
 
+/* Bottom left, so it never covers the composer buttons on the right. */
 .panel-top {
   position: absolute;
-  right: 24px;
+  left: 24px;
   bottom: 24px;
   z-index: 2;
-  box-shadow: var(--md-elevation-2);
 }
 
 .panel-top[hidden] {
   display: none;
-}
-
-/* Over the main column, not over the Settings column. */
-@container (min-width: 940px) {
-  .panel-top {
-    right: calc(var(--panel-settings-width) + 24px);
-  }
 }
 
 /* Code blocks and tables of rendered Markdown */

@@ -228,7 +228,7 @@ function updateDescriptionOverflow() {
   const atEnd = view.expanded || descBody.scrollTop + descBody.clientHeight >= descBody.scrollHeight - 2;
   descWrap.classList.toggle("has-more", view.overflowing && !atEnd);
   descMore.hidden = !view.overflowing;
-  descExpand.textContent = view.expanded ? "Show less" : "Show full description";
+  descExpand.textContent = view.expanded ? "Collapse description" : "Expand description";
   descExpand.setAttribute("aria-expanded", String(view.expanded));
   if (view.overflowing && !view.expanded) descBody.tabIndex = 0;
   else descBody.removeAttribute("tabindex");
