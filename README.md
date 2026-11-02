@@ -91,7 +91,7 @@ changes at once. The title and description still use **Save**.
 
 **Timeline** (`timeline.js`): below the description, the panel shows the life of the
 issue as on GitHub, from the REST timeline endpoint (readable without a token). It
-lists the opening, comments (rendered Markdown, author badge, "edited" marker,
+lists comments (rendered Markdown, author badge, "edited" marker,
 collapsed minimized comments), reviews, commits, and events such as labels,
 assignees, renames, state changes, milestones, references, cross-references,
 parent and sub-issues, blocking relationships and pull request activity. Label and
@@ -112,7 +112,8 @@ link of a comment, add and remove reactions, and edit or delete your own comment
 (repository admins can delete any comment). A draft comment or an open comment edit
 counts as unsaved changes when the panel closes. The timeline follows the board's
 live updates (see above) and refreshes after the panel's own saves; without a token
-it is read-only.
+it is read-only. Rows are patched one by one, so a refresh keeps the scroll position
+and does not reload unchanged rows.
 
 **Mentions** (`mentions.js`, `markdown-editor.js`): typing `@` in a Markdown editor
 (description, new comment, comment edit) opens a list of up to 5 people at the caret,
@@ -132,6 +133,14 @@ refuses). A box is disabled when the Markdown and the rendered HTML do not line 
 without a token. The pencil button switches the title and description to the editors
 (**Save** / **Cancel**; Cancel asks before discarding changes). A new issue still opens
 in edit mode. The rendered body is kept out of the board's issue cache.
+When the description is taller than its box, a fade at the bottom and a **Show full
+description** / **Show less** button appear. The chevron in the card header collapses
+the whole description, **Copy link** copies the issue URL, and with a token the
+description has the same reactions as a comment. Wide tables scroll sideways and code
+blocks have a **Copy** button. A **Back to top** button appears after scrolling down.
+The description and the timeline are re-read when the tab regains focus and every 4
+minutes (private image links expire after about 5 minutes); the reading position and
+the scroll inside the description are kept.
 
 **Tabs** (`panel-tabs.js`): the top of the panel is a tab strip. Clicking a relationship
 row, or a `#N` / issue link in a description or a comment, opens that issue in a new tab
@@ -148,7 +157,9 @@ open on GitHub, and so do pull requests.
 Menus open and close without animation.
 
 The Settings column is 440px wide and sits next to the description from a 940px
-panel width.
+panel width. In both layouts the description and the timeline scroll together (from
+940px, in the left column). The description is at least 120px and at most 60% of the
+viewport height tall, then scrolls inside itself.
 
 Dropdown options are read from each repository's existing labels. A warning icon
 appears when an expected label is missing from the repository. The **+ Add**

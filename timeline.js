@@ -547,14 +547,6 @@ function orderRows(rows) {
   return timelineOrder === "newest-first" ? [...rows].reverse() : rows;
 }
 
-function openedHtml(issue) {
-  return `
-    <li class="tl-item tl-event tl-opened" data-key="opened">
-      <span class="tl-badge tl-tone-open"><md-icon>adjust</md-icon></span>
-      <div class="tl-event-body"><span class="tl-event-text">${userHtml(issue.user)} opened this issue</span> ${timeHtml(issue.created_at)}</div>
-    </li>`;
-}
-
 function olderHtml(timeline) {
   const count = (timeline.lowestPage - 1) * TIMELINE_PAGE_SIZE;
   return `
@@ -567,10 +559,10 @@ function olderHtml(timeline) {
 
 function statusHtml(timeline) {
   if (timeline.status === "loading") {
-    return '<li class="tl-item tl-status"><md-circular-progress indeterminate aria-label="Loading the timeline"></md-circular-progress><span>Loading the timeline…</span></li>';
+    return '<li class="tl-item tl-status" data-key="status"><md-circular-progress indeterminate aria-label="Loading the timeline"></md-circular-progress><span>Loading the timeline…</span></li>';
   }
   if (timeline.status === "error") {
-    return `<li class="tl-item tl-status tl-status-error" role="alert"><md-icon>error</md-icon><span>Could not load the timeline: ${escapeHtml(timeline.error)}</span><md-text-button data-action="retry" data-focus-key="retry">Retry</md-text-button></li>`;
+    return `<li class="tl-item tl-status tl-status-error" data-key="status" role="alert"><md-icon>error</md-icon><span>Could not load the timeline: ${escapeHtml(timeline.error)}</span><md-text-button data-action="retry" data-focus-key="retry">Retry</md-text-button></li>`;
   }
   return "";
 }
@@ -586,6 +578,54 @@ function scrollParentOf(element) {
     if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight) return node;
   }
   return document.scrollingElement;
+}
+
+// Brings the rows of `list` in line with `html` (keyed <li> rows). Only the rows whose HTML changed are replaced, so the
+// others keep their images, text selection and open state while the timeline refreshes.
+function patchTimelineList(list, html) {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const current = new Map([...list.children].map((row) => [row.dataset.key, row]));
+  const next = [...template.content.children].map((fresh) => {
+    const source = fresh.outerHTML;
+    const kept = current.get(fresh.dataset.key);
+    if (kept && kept.rowSource === source) return kept;
+    fresh.rowSource = source;
+    fresh.querySelectorAll(".tl-comment-body a[href]").forEach((link) => {
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+    });
+    enhanceMarkdownBody(fresh);
+    return fresh;
+  });
+  let cursor = list.firstElementChild;
+  for (const row of next) {
+    if (row === cursor) cursor = cursor.nextElementSibling;
+    else list.insertBefore(row, cursor);
+  }
+  // Every row that stays is before the cursor, so what is left is gone from the timeline.
+  while (cursor) {
+    const stale = cursor;
+    cursor = cursor.nextElementSibling;
+    stale.remove();
+  }
+}
+
+// Keeps the first row that is in view where it was, whatever changed above it. At the very top, or when the list is
+// below the fold, nothing is moved.
+function keepReadingPosition(list, change) {
+  const scroller = scrollParentOf(list);
+  if (scroller === document.scrollingElement || scroller.scrollTop === 0) {
+    change();
+    return;
+  }
+  const { top, bottom } = scroller.getBoundingClientRect();
+  const anchor = [...list.children].find((row) => row.getBoundingClientRect().bottom > top + 1);
+  const anchorTop = anchor ? anchor.getBoundingClientRect().top : bottom;
+  change();
+  if (!anchor || anchorTop >= bottom) return;
+  const moved = [...list.children].find((row) => row.dataset.key === anchor.dataset.key);
+  if (moved) scroller.scrollTop += moved.getBoundingClientRect().top - anchorTop;
 }
 
 function renderTimeline() {
@@ -609,15 +649,14 @@ function renderTimeline() {
   const older = timeline.lowestPage > 1 ? olderHtml(timeline) : "";
   const body = orderRows(rows).map((row) => rowHtml(row, timeline, issue)).join("");
   const status = statusHtml(timeline);
-  const parts = timelineOrder === "newest-first" ? [status, body, older, openedHtml(issue)] : [openedHtml(issue), older, status, body];
-  list.innerHTML = parts.join("");
+  const html = (timelineOrder === "newest-first" ? [status, body, older] : [older, status, body]).join("");
+  keepReadingPosition(list, () => patchTimelineList(list, html));
 
-  for (const [id, entry] of timeline.editors) list.querySelector(`[data-edit-slot="${id}"]`)?.append(entry.element);
-  list.querySelectorAll(".tl-comment-body a[href]").forEach((link) => {
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-  });
-  if (focusKey) list.querySelector(`[data-focus-key="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
+  for (const [id, entry] of timeline.editors) {
+    const slot = list.querySelector(`[data-edit-slot="${id}"]`);
+    if (slot && entry.element.parentElement !== slot) slot.append(entry.element);
+  }
+  if (focusKey && !list.contains(document.activeElement)) list.querySelector(`[data-focus-key="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
   renderTimelineChrome();
 }
 
@@ -706,8 +745,6 @@ async function loadOlderTimeline() {
   if (!issue || timeline.loadingOlder || timeline.lowestPage <= 1) return;
   timeline.loadingOlder = true;
   renderTimeline();
-  const anchor = timelineUi.list.querySelector('[data-key="older"]');
-  const before = anchor ? anchor.getBoundingClientRect().top : 0;
   try {
     await ensureTimelinePage(issue, timeline, timeline.lowestPage - 1);
     if (panelTimeline !== timeline) return;
@@ -718,9 +755,6 @@ async function loadOlderTimeline() {
     if (panelTimeline === timeline) {
       timeline.loadingOlder = false;
       renderTimeline();
-      // Older items are inserted above the button: keep what the user was reading where it was.
-      const after = timelineUi.list.querySelector('[data-key="older"]') || timelineUi.list.querySelector('[data-key="opened"]');
-      if (anchor && after && timelineOrder === "oldest-first") scrollParentOf(timelineUi.list).scrollTop += after.getBoundingClientRect().top - before;
       loadViewerReactions(timeline);
     }
   }

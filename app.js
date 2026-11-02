@@ -1619,10 +1619,21 @@ function ensurePanel() {
             <span class="tl-card-title desc-meta"></span>
             <span class="tl-badge-text">Author</span>
             <div class="tl-actions">
+              <md-icon-button class="tl-action desc-copy" aria-label="Copy link" title="Copy link"><md-icon>link</md-icon></md-icon-button>
               <md-icon-button class="tl-action desc-edit" aria-label="Edit description" title="Edit description"><md-icon>edit</md-icon></md-icon-button>
+              <md-icon-button class="tl-action desc-toggle" aria-label="Collapse description" aria-expanded="true" aria-controls="desc-content" title="Collapse description"><md-icon>expand_less</md-icon></md-icon-button>
             </div>
           </header>
-          <div class="desc-body"></div>
+          <div class="desc-content" id="desc-content">
+            <div class="desc-body-wrap">
+              <div class="desc-body"></div>
+              <div class="desc-fade" aria-hidden="true"></div>
+            </div>
+            <div class="desc-more" hidden>
+              <md-text-button class="desc-expand" type="button" aria-expanded="false">Show full description</md-text-button>
+            </div>
+            <div class="desc-reactions"></div>
+          </div>
         </section>
         <div class="panel-save-row">
           <div class="close-split">
@@ -1639,6 +1650,7 @@ function ensurePanel() {
         <fieldset class="panel-controls"></fieldset>
       </aside>
     </div>
+    <md-filled-tonal-icon-button class="panel-top" aria-label="Back to top" title="Back to top" hidden><md-icon>arrow_upward</md-icon></md-filled-tonal-icon-button>
     <div class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Resize panel" tabindex="0"></div>
   `;
   descriptionEditor = createMarkdownEditor({
@@ -1663,10 +1675,17 @@ function ensurePanel() {
     descCard: panel.querySelector(".desc-card"),
     descMeta: panel.querySelector(".desc-meta"),
     descBody: panel.querySelector(".desc-body"),
+    descWrap: panel.querySelector(".desc-body-wrap"),
+    descMore: panel.querySelector(".desc-more"),
+    descExpand: panel.querySelector(".desc-expand"),
+    descReactions: panel.querySelector(".desc-reactions"),
     descEdit: panel.querySelector(".desc-edit"),
+    descCopy: panel.querySelector(".desc-copy"),
+    descToggle: panel.querySelector(".desc-toggle"),
     cancel: panel.querySelector(".panel-cancel"),
     repoField: panel.querySelector(".panel-repo-field"),
     resizer: panel.querySelector(".panel-resizer"),
+    top: panel.querySelector(".panel-top"),
     save: panel.querySelector(".panel-save"),
     statusPill: panel.querySelector(".status-pill"),
     closeSplit: panel.querySelector(".close-split"),
@@ -1683,6 +1702,7 @@ function ensurePanel() {
   panelElements.save.addEventListener("click", saveTitleAndDescription);
   setupDescriptionCard(panel);
   setupPanelTabs(panel);
+  setupPanelScroll(panel);
   setupCloseControls(panel);
   setupPanelResizer(panel, panelElements.resizer);
   document.addEventListener("keydown", (event) => {
