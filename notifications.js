@@ -385,7 +385,9 @@ function renderNotifications() {
   const shown = notificationsTab === "unread" ? unread : items;
 
   element.querySelector('[data-tab="all"]').textContent = `All (${items.length})`;
-  element.querySelector('[data-tab="unread"]').textContent = `Unread (${unread.length})`;
+  const unreadTab = element.querySelector('[data-tab="unread"]');
+  unreadTab.textContent = `Unread (${unread.length})`;
+  unreadTab.classList.toggle("has-alerts", unread.length > 0);
   for (const tab of element.querySelectorAll(".notif-tab")) tab.setAttribute("aria-pressed", String(tab.dataset.tab === notificationsTab));
   updateMenuTime(element, accessToken && !notificationsDenied ? notifications.time : 0);
   element.querySelector(".notif-mark-all").disabled = unread.length === 0;
