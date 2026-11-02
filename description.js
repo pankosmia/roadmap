@@ -1,18 +1,25 @@
 // Description card of the side panel: the opening message of an existing issue is shown as on GitHub (author, date,
-// "edited", rendered Markdown with clickable task-list checkboxes) and only becomes editable on demand.
+// "edited", rendered Markdown with clickable task-list checkboxes, reactions, copyable link) and only becomes editable
+// on demand. It can be collapsed, and a long description scrolls inside the card until it is expanded to its full height.
 // Loaded before app.js; it relies on globals declared there and in timeline.js (githubRequest, currentIssue, TIMELINE_ACCEPT…).
 
 const EDITED_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
-    issue(number: $number) { lastEditedAt editor { login } }
+    issue(number: $number) { lastEditedAt editor { login } reactionGroups { content viewerHasReacted } }
   }
 }`;
 // A task list item: optional quote marks, a list marker, then "[ ]" or "[x]". `[` follows the captured prefix.
 const TASK_MARKER = /^([ \t>]*(?:[-*+]|\d{1,9}[.)])[ \t]+)\[([ xX])\](?=\s|$)/;
 const FENCE = /^[ \t>]*(`{3,}|~{3,})/;
+// GitHub's image links carry a token that expires after a few minutes: an open panel loads the description again before that.
+const PANEL_REFRESH_INTERVAL = 4 * 60 * 1000;
+const PANEL_REFRESH_MIN_GAP = 30 * 1000;
 
 let descriptionMode = "read";
 let descriptionView = newDescriptionView("");
+let descriptionObserver = null;
+let descriptionBodyOwner = null;
+let lastPanelRefresh = 0;
 
 function newDescriptionView(key) {
   return {
@@ -25,7 +32,16 @@ function newDescriptionView(key) {
     editor: "",
     saving: false,
     tasks: null,
-    shown: null
+    shown: null,
+    // Reaction counts of GitHub, the reactions of the connected user, and what the card is showing of them.
+    reactions: null,
+    mine: new Set(),
+    picker: false,
+    busy: new Set(),
+    reactionsShown: null,
+    collapsed: false,
+    expanded: false,
+    overflowing: false
   };
 }
 
@@ -91,6 +107,7 @@ function ensureDescription(issue) {
   if (descriptionView.key === key) return;
   descriptionView = newDescriptionView(key);
   descriptionView.status = "loading";
+  lastPanelRefresh = Date.now();
   loadDescription(issue, descriptionView);
 }
 
@@ -127,6 +144,11 @@ async function loadDescription(issue, view) {
     view.body = fresh.body || "";
     view.editedAt = history?.lastEditedAt || "";
     view.editor = history?.editor?.login || "";
+    view.reactions = fresh.reactions || null;
+    if (history?.reactionGroups) {
+      const groupToRest = new Map(REACTIONS.map((reaction) => [reaction.graphql, reaction.content]));
+      view.mine = new Set(history.reactionGroups.filter((group) => group.viewerHasReacted).map((group) => groupToRest.get(group.content)));
+    }
     view.status = "ready";
     adoptFreshBody(issue, view.body);
   } catch (error) {
@@ -164,6 +186,9 @@ function renderDescriptionBody(view) {
   const shown = `${view.status}|${view.error}|${view.html}`;
   if (view.shown !== shown) {
     view.shown = shown;
+    // Loading the description again must not throw the reader back to the top of a long text.
+    const scrollTop = descriptionBodyOwner === view ? descBody.scrollTop : 0;
+    descriptionBodyOwner = view;
     if (view.status === "loading" || view.status === "idle") {
       descBody.innerHTML = '<div class="desc-status"><md-circular-progress indeterminate aria-label="Loading description"></md-circular-progress></div>';
     } else if (view.status === "error") {
@@ -174,15 +199,148 @@ function renderDescriptionBody(view) {
         link.target = "_blank";
         link.rel = "noopener noreferrer";
       });
+      enhanceMarkdownBody(descBody);
     } else {
       descBody.innerHTML = '<p class="tl-empty">No description provided.</p>';
     }
+    descBody.scrollTop = scrollTop;
+    observeDescriptionSize();
   }
   bindTaskCheckboxes(descBody, view);
+  updateDescriptionOverflow();
+}
+
+// The "show more" fade and button follow the size of the text, which also changes when its images load.
+function observeDescriptionSize() {
+  const { descBody } = panelElements;
+  if (!descriptionObserver) descriptionObserver = new ResizeObserver(updateDescriptionOverflow);
+  descriptionObserver.disconnect();
+  descriptionObserver.observe(descBody);
+  if (descBody.firstElementChild) descriptionObserver.observe(descBody.firstElementChild);
+}
+
+function updateDescriptionOverflow() {
+  const { descCard, descBody, descWrap, descMore, descExpand } = panelElements;
+  const view = descriptionView;
+  if (descCard.hidden || view.collapsed) return;
+  // Once expanded the text no longer overflows; it keeps the state it had.
+  if (!view.expanded) view.overflowing = descBody.scrollHeight > descBody.clientHeight + 1;
+  const atEnd = view.expanded || descBody.scrollTop + descBody.clientHeight >= descBody.scrollHeight - 2;
+  descWrap.classList.toggle("has-more", view.overflowing && !atEnd);
+  descMore.hidden = !view.overflowing;
+  descExpand.textContent = view.expanded ? "Show less" : "Show full description";
+  descExpand.setAttribute("aria-expanded", String(view.expanded));
+  if (view.overflowing && !view.expanded) descBody.tabIndex = 0;
+  else descBody.removeAttribute("tabindex");
+}
+
+function toggleDescriptionExpanded() {
+  const view = descriptionView;
+  view.expanded = !view.expanded;
+  const issue = currentIssue();
+  if (issue) renderDescription(issue);
+  if (!view.expanded) panelElements.descCard.scrollIntoView({ block: "nearest" });
+}
+
+function toggleDescriptionCollapsed() {
+  const view = descriptionView;
+  view.collapsed = !view.collapsed;
+  const issue = currentIssue();
+  if (issue) renderDescription(issue);
+}
+
+/* ---------- Reactions and link ---------- */
+
+function descriptionReactionsHtml(view) {
+  if (view.status !== "ready") return "";
+  const counts = view.reactions || {};
+  const disabled = accessToken ? "" : "disabled";
+  const pills = REACTIONS.filter((reaction) => counts[reaction.content] > 0)
+    .map((reaction) => `
+      <button type="button" class="tl-reaction${view.mine.has(reaction.content) ? " is-mine" : ""}" data-desc-action="react" data-content="${reaction.content}"
+        data-focus-key="react:${reaction.content}" aria-pressed="${view.mine.has(reaction.content)}" title="${reaction.label}" ${disabled}>
+        <span aria-hidden="true">${reaction.emoji}</span><span>${counts[reaction.content]}</span>
+      </button>`)
+    .join("");
+  const add = accessToken
+    ? `<button type="button" class="tl-reaction tl-reaction-add" data-desc-action="picker" data-focus-key="picker" aria-label="Add reaction" aria-expanded="${view.picker}"><md-icon>add_reaction</md-icon></button>`
+    : "";
+  const picker = view.picker
+    ? `<div class="tl-picker" role="group" aria-label="Pick a reaction">${REACTIONS.map((reaction) => `
+        <button type="button" class="tl-reaction" data-desc-action="react" data-content="${reaction.content}" data-focus-key="react:${reaction.content}" title="${reaction.label}" aria-label="${reaction.label}">${reaction.emoji}</button>`).join("")}</div>`
+    : "";
+  return pills || add ? `<div class="tl-reactions">${pills}${add}</div>${picker}` : "";
+}
+
+function renderDescriptionReactions(view) {
+  const { descReactions } = panelElements;
+  const html = `${descriptionReactionsHtml(view)}|${accessToken ? 1 : 0}`;
+  if (view.reactionsShown === html) return;
+  view.reactionsShown = html;
+  const focusKey = descReactions.contains(document.activeElement) ? document.activeElement.closest("[data-focus-key]")?.dataset.focusKey : null;
+  descReactions.innerHTML = descriptionReactionsHtml(view);
+  if (focusKey) descReactions.querySelector(`[data-focus-key="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
+}
+
+// POST answers 201 for a new reaction and 200 with the existing one when the user already reacted: that one is removed.
+async function toggleDescriptionReaction(content) {
+  const issue = currentIssue();
+  const view = descriptionView;
+  if (!issue || !accessToken || view.busy.has(content)) return;
+  view.busy.add(content);
+  view.picker = false;
+  try {
+    const url = `${issueApiBase(issue)}/reactions`;
+    const { data, response } = await githubRequestWithResponse(
+      url,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }) },
+      accessToken
+    );
+    let delta = 1;
+    if (response.status === 200) {
+      await githubRequest(`${url}/${data.id}`, { method: "DELETE" }, accessToken);
+      delta = -1;
+    }
+    const mine = new Set(view.mine);
+    if (delta > 0) mine.add(content);
+    else mine.delete(content);
+    view.mine = mine;
+    const reactions = { ...view.reactions };
+    reactions[content] = Math.max(0, (reactions[content] || 0) + delta);
+    reactions.total_count = Math.max(0, (reactions.total_count || 0) + delta);
+    view.reactions = reactions;
+  } catch (error) {
+    showNotice(`Could not change the reaction: ${apiErrorMessage(error)}`, true);
+  } finally {
+    view.busy.delete(content);
+    if (descriptionView === view) renderDescriptionReactions(view);
+  }
+}
+
+async function copyIssueLink() {
+  const issue = currentIssue();
+  if (!issue || issue.draft) return;
+  try {
+    await navigator.clipboard.writeText(issue.html_url);
+    showNotice("Issue link copied.");
+  } catch {
+    showNotice("Could not copy the link. Your browser blocked access to the clipboard.", true);
+  }
+}
+
+/* ---------- Refresh of an open panel ---------- */
+
+function refreshOpenPanel() {
+  if (panelIssueId === null || document.hidden || Date.now() - lastPanelRefresh < PANEL_REFRESH_MIN_GAP) return;
+  const issue = currentIssue();
+  if (!issue || issue.draft) return;
+  lastPanelRefresh = Date.now();
+  refreshDescription();
+  refreshTimeline();
 }
 
 function renderDescription(issue) {
-  const { heading, descCard, descMeta, descEdit, title: titleInput, cancel, save } = panelElements;
+  const { heading, descCard, descMeta, descEdit, descToggle, title: titleInput, cancel, save } = panelElements;
   const editing = issue.draft || descriptionMode === "edit";
   heading.hidden = editing;
   descCard.hidden = editing;
@@ -197,7 +355,16 @@ function renderDescription(issue) {
   const editedAt = descriptionView.editedAt ? ` on ${new Date(descriptionView.editedAt).toLocaleString()}` : "";
   descMeta.innerHTML = `${userHtml(issue.user)} commented ${timeHtml(issue.created_at)}${edited ? ` <span class="tl-edited" title="Edited${escapeHtml(editedBy + editedAt)}">· edited</span>` : ""}`;
   descEdit.hidden = !accessToken;
-  renderDescriptionBody(descriptionView);
+  const view = descriptionView;
+  descCard.classList.toggle("is-collapsed", view.collapsed);
+  descCard.classList.toggle("is-expanded", view.expanded);
+  descToggle.querySelector("md-icon").textContent = view.collapsed ? "expand_more" : "expand_less";
+  descToggle.setAttribute("aria-expanded", String(!view.collapsed));
+  const toggleLabel = view.collapsed ? "Expand description" : "Collapse description";
+  descToggle.setAttribute("aria-label", toggleLabel);
+  descToggle.title = toggleLabel;
+  renderDescriptionBody(view);
+  renderDescriptionReactions(view);
 }
 
 async function onDescriptionCheckbox(event) {
@@ -285,6 +452,23 @@ async function cancelDescriptionEdit() {
 
 function setupDescriptionCard(panel) {
   panel.querySelector(".desc-edit").addEventListener("click", startDescriptionEdit);
+  panelElements.descCopy.addEventListener("click", copyIssueLink);
+  panelElements.descToggle.addEventListener("click", toggleDescriptionCollapsed);
+  panelElements.descExpand.addEventListener("click", toggleDescriptionExpanded);
+  panelElements.descBody.addEventListener("scroll", updateDescriptionOverflow, { passive: true });
+  panelElements.descReactions.addEventListener("click", (event) => {
+    const target = event.target.closest("[data-desc-action]");
+    if (!target) return;
+    if (target.dataset.descAction === "picker") {
+      descriptionView.picker = !descriptionView.picker;
+      renderDescriptionReactions(descriptionView);
+    } else {
+      toggleDescriptionReaction(target.dataset.content);
+    }
+  });
+  document.addEventListener("visibilitychange", refreshOpenPanel);
+  window.addEventListener("focus", refreshOpenPanel);
+  setInterval(refreshOpenPanel, PANEL_REFRESH_INTERVAL);
   panel.querySelector(".panel-cancel").addEventListener("click", cancelDescriptionEdit);
   panelElements.descBody.addEventListener("change", onDescriptionCheckbox);
   panelElements.descBody.addEventListener("click", (event) => {

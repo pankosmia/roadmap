@@ -1536,6 +1536,118 @@ md-outlined-text-field {
   min-height: 0;
 }
 
+.desc-card.is-collapsed .desc-content {
+  display: none;
+}
+
+/* Expanded to its full height: the panel's column scrolls instead of the description. */
+.desc-card.is-expanded .desc-body {
+  max-height: none;
+  overflow-y: visible;
+}
+
+.desc-body-wrap {
+  position: relative;
+}
+
+/* Tells that the description goes on below, until its end is reached. */
+.desc-fade {
+  position: absolute;
+  inset: auto 0 0;
+  height: 56px;
+  background: linear-gradient(to bottom, transparent, var(--md-sys-color-surface));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s;
+}
+
+.desc-body-wrap.has-more .desc-fade {
+  opacity: 1;
+}
+
+.desc-more {
+  display: flex;
+  justify-content: center;
+  padding: 0 12px 4px;
+}
+
+.desc-more[hidden] {
+  display: none;
+}
+
+.desc-reactions:empty {
+  display: none;
+}
+
+.desc-reactions {
+  padding-top: 4px;
+}
+
+.panel-top {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: 2;
+  box-shadow: var(--md-elevation-2);
+}
+
+.panel-top[hidden] {
+  display: none;
+}
+
+/* Over the main column, not over the Settings column. */
+@container (min-width: 940px) {
+  .panel-top {
+    right: calc(var(--panel-settings-width) + 24px);
+  }
+}
+
+/* Code blocks and tables of rendered Markdown */
+.md-code-block {
+  position: relative;
+  margin: 0 0 12px;
+}
+
+.md-code-block > pre {
+  margin: 0;
+}
+
+.md-code-copy {
+  --md-icon-button-icon-size: 18px;
+  --md-icon-button-state-layer-height: 32px;
+  --md-icon-button-state-layer-width: 32px;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+
+.md-code-block:hover .md-code-copy,
+.md-code-copy:focus-within {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .md-code-copy {
+    opacity: 1;
+  }
+}
+
+.md-table-scroll {
+  margin: 0 0 12px;
+  overflow-x: auto;
+}
+
+/* "anywhere" would let a cell shrink to one letter instead of making the table scroll. */
+.md-table-scroll th,
+.md-table-scroll td {
+  overflow-wrap: break-word;
+}
+
 .desc-status {
   display: flex;
   justify-content: center;
