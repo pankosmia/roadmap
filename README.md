@@ -133,11 +133,11 @@ refuses). A box is disabled when the Markdown and the rendered HTML do not line 
 without a token. The pencil button switches the title and description to the editors
 (**Save** / **Cancel**; Cancel asks before discarding changes). A new issue still opens
 in edit mode. The rendered body is kept out of the board's issue cache.
-When the description is taller than its box, a fade at the bottom and a **Show full
-description** / **Show less** button appear. The chevron in the card header collapses
-the whole description, **Copy link** copies the issue URL, and with a token the
+When the description is taller than its box, a fade at the bottom and an **Expand
+description** / **Collapse description** button appear. The chevron in the card header
+collapses the whole description, **Copy link** copies the issue URL, and with a token the
 description has the same reactions as a comment. Wide tables scroll sideways and code
-blocks have a **Copy** button. A **Back to top** button appears after scrolling down.
+blocks have a **Copy** button. A round **Back to top** button appears at the bottom left after scrolling down.
 The description and the timeline are re-read when the tab regains focus and every 4
 minutes (private image links expire after about 5 minutes); the reading position and
 the scroll inside the description are kept.
