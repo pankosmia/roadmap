@@ -199,6 +199,9 @@ is. Dropping a subissue on a
 column removes it from its parent and moves it there (on a version page it also gets
 that page's Version label). Every hierarchy change shows an **Undo** snackbar.
 
+The search bar looks in issue titles and text (and those of their subissues). Typing a
+number, with or without a leading `#` (`12` or `#12`), also finds the issue with that exact number.
+
 A one-line footer at the bottom of every page shows the issue count and the
 click/drag hint. Below the search bar (centered; its container spans the width of
 the columns), every page has a **View** button (tonal, layout icon) and two filter chips,
@@ -252,6 +255,10 @@ local storage as `roadmap-notifications-tab`), the refresh button (its icon spin
 while loading), an "Updated … ago" text on the right of the button group (in both menus; the
 footer of both shows an "Esc to close" hint on the right, hidden on touch screens), **Mark all as read** (sent per
 repository, so other organizations are untouched) and **Refresh** are in the menu.
+The icon of each row follows the color code of the board: open issues are green, closed
+ones purple (gray when not planned or duplicate); pull requests are green (open), gray (draft),
+purple (merged) or red (closed). The states are read with one batched GraphQL request per 50 threads
+and kept while the thread is unchanged; if that request fails, the row keeps a neutral icon.
 Clicking a row opens the issue in the side panel when it is loaded on the board,
 and the thread on GitHub otherwise. The list is read with `GET /notifications?all=true`
 (up to 300 threads), refreshed with the live sync (about every minute) and cached

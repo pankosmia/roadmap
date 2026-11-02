@@ -371,7 +371,9 @@ function isNestedSubIssue(issue) {
   return Boolean(issue.parent_issue_url) && issues.some((item) => item.url === issue.parent_issue_url && isOnBoard(item));
 }
 
+// "12" or "#12" also finds issue number 12 (an exact number, not one that merely contains the digits).
 function matchesText(issue) {
+  if (/^#?\d+$/.test(searchTerm) && issue.number === Number(searchTerm.replace("#", ""))) return true;
   return `${issue.title} ${issue.body || ""}`.toLowerCase().includes(searchTerm);
 }
 

@@ -42,6 +42,8 @@ const NOTIFICATION_ICONS = {
   Release: "sell"
 };
 
+const NOTIFICATION_STATE_BATCH = 50;
+
 function readNotificationsCache() {
   try {
     const cached = JSON.parse(sessionStorage.getItem(NOTIFICATION_CACHE_KEY));
@@ -133,6 +135,73 @@ function notificationFromThread(thread) {
   };
 }
 
+// The thread does not say whether its issue or pull request is open, so the states are read in batches with one
+// GraphQL request each. A thread whose last update is unchanged keeps the state it already had.
+function notificationStateQuery(batch) {
+  const declarations = batch.map((_, index) => `$o${index}: String!, $r${index}: String!, $n${index}: Int!`).join(", ");
+  const fields = batch
+    .map(
+      (_, index) => `s${index}: repository(owner: $o${index}, name: $r${index}) { issueOrPullRequest(number: $n${index}) {
+        ... on Issue { state stateReason }
+        ... on PullRequest { state isDraft }
+      } }`
+    )
+    .join("\n");
+  const variables = {};
+  batch.forEach((item, index) => {
+    const [owner, name] = item.repo.split("/");
+    variables[`o${index}`] = owner;
+    variables[`r${index}`] = name;
+    variables[`n${index}`] = Number(notificationNumber(item));
+  });
+  return { query: `query(${declarations}) { ${fields} }`, variables };
+}
+
+async function attachNotificationStates(items, run) {
+  const known = new Map(notifications.items.map((item) => [item.id, item]));
+  const missing = [];
+  for (const item of items) {
+    const previous = known.get(item.id);
+    if (previous?.subjectState && previous.updatedAt === item.updatedAt) item.subjectState = previous.subjectState;
+    else if ((item.type === "Issue" || item.type === "PullRequest") && notificationNumber(item)) missing.push(item);
+  }
+  const batches = [];
+  for (let start = 0; start < missing.length; start += NOTIFICATION_STATE_BATCH) batches.push(missing.slice(start, start + NOTIFICATION_STATE_BATCH));
+  await Promise.all(
+    batches.map(async (batch) => {
+      try {
+        const result = await githubRequest(
+          `${API_ROOT}/graphql`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(notificationStateQuery(batch)) },
+          accessToken
+        );
+        batch.forEach((item, index) => {
+          const subject = result.data?.[`s${index}`]?.issueOrPullRequest;
+          if (!subject) return;
+          item.subjectState = { state: subject.state, reason: subject.stateReason || "", draft: Boolean(subject.isDraft) };
+        });
+      } catch {
+        // Without a state the row keeps a neutral icon; the next refresh tries again.
+      }
+    })
+  );
+  return run === notificationsRun;
+}
+
+// Same icons and colors as everywhere else: issue status on the board, pull request state in the Development area.
+function notificationTypeIconHtml(item) {
+  const subject = item.subjectState;
+  if (subject && item.type === "Issue") {
+    const status = issueStatus({ state: subject.state.toLowerCase(), state_reason: subject.reason.toLowerCase() });
+    return `<md-icon class="notif-type status-${status.key}" title="${status.label}">${status.icon}</md-icon>`;
+  }
+  if (subject && item.type === "PullRequest") {
+    const state = pullState({ state: subject.draft && subject.state === "OPEN" ? "DRAFT" : subject.state });
+    return `<md-icon class="notif-type ${state.className}" title="${state.text}">${state.icon}</md-icon>`;
+  }
+  return `<md-icon class="notif-type">${NOTIFICATION_ICONS[item.type] || "notifications"}</md-icon>`;
+}
+
 function notificationNumber(item) {
   return item.apiUrl?.match(/\/(?:issues|pulls)\/(\d+)$/)?.[1] || "";
 }
@@ -207,6 +276,7 @@ async function fetchNotifications(run) {
     if (threads.length < NOTIFICATION_PAGE_SIZE) break;
     truncated = page === NOTIFICATION_MAX_PAGES;
   }
+  if (!(await attachNotificationStates(items, run))) return null;
   return { items, truncated };
 }
 
@@ -359,7 +429,7 @@ function notificationRowHtml(item) {
     <li class="notif-row${item.unread ? " unread" : ""}" data-id="${escapeHtml(item.id)}">
       <button type="button" class="notif-open">
         ${unreadMark}
-        <md-icon class="notif-type">${NOTIFICATION_ICONS[item.type] || "notifications"}</md-icon>
+        ${notificationTypeIconHtml(item)}
         <span class="notif-text">
           <span class="notif-title">${escapeHtml(item.title)}</span>
           <span class="notif-meta">${ref} · ${escapeHtml(reason)} · ${notificationAgeText(item.updatedAt)}</span>

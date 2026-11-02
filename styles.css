@@ -3147,6 +3147,10 @@ a.tl-actor:hover,
 
 .notif-row.unread .notif-dot { background: var(--md-sys-color-primary); }
 .notif-type { --md-icon-size: 20px; flex: none; color: var(--md-sys-color-on-surface-variant); }
+.notif-type.status-open { color: var(--status-open); }
+.notif-type.status-completed { color: var(--status-completed); }
+.notif-type.status-not-planned,
+.notif-type.status-duplicate { color: var(--status-closed-gray); }
 .notif-text { display: flex; flex: 1 1 0; flex-direction: column; min-width: 0; }
 
 .notif-title {
