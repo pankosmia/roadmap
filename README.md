@@ -217,16 +217,21 @@ differ from the view that was active before they were touched: the default view,
 or the saved view that was applied. Filters and views are stored in the browser's
 local storage (`roadmap-filters`) and shared by all pages.
 
-The toolbar buttons read **Add**, **Notifications**, **Pull requests** (a tonal
-button) and **Archives**. The **Pull requests** button opens a dialog listing every open pull request of the organization (`open-pulls.js`,
-one paginated GraphQL search, loaded with the board and cached for 5 minutes,
-**Refresh** to reload; needs a connected token). Each row shows the state icon,
-title, repository, number, author and age, and links to the pull request. Pull
+The toolbar has **Add**, **Archives** and two tonal icon buttons, **Notifications**
+(inbox icon) and **Pull requests** (merge icon), each with a red count badge when
+there is something to see. The **Pull requests** button opens a menu, like
+**Notifications**, listing every open pull request of the organization (`open-pulls.js`,
+one paginated GraphQL search, loaded with the board and cached for 5 minutes; needs a
+connected token). The header has a refresh icon button (top right, its icon spins while
+loading), then an **All** / **Alerts** button group with counts (the choice is remembered
+in local storage as `roadmap-pulls-tab`; the Alerts label is red when there are alerts),
+and the number of pull requests without a linked issue. Each row shows the state icon, title, repository,
+number, author and age, and links to the pull request. Pull
 requests linked to an issue in their Development area have a colored edge and a
 chip linking to each issue; orphan pull requests have a "No issue" chip.
 
-Pull requests can raise an alert, shown as a red chip on the row, an **Alerts
-only** filter in the dialog, and a red count badge on the button (hidden at 0).
+Pull requests can raise an alert, shown as a red chip on the row, the **Alerts**
+filter in the menu, and a red count badge on the button (hidden at 0).
 Hours are calendar hours (thresholds are constants in `open-pulls.js`):
 
 - **Draft**: a draft for 30 days or more, counted from its last "convert to draft"
@@ -244,7 +249,8 @@ as read with its envelope button; it then stays listed, no longer highlighted; t
 after the 8 second **Undo** delay (or when the page is left), since GitHub's API
 cannot undo it. **All** / **Unread** button group (All by default, the choice is remembered in
 local storage as `roadmap-notifications-tab`), the refresh button (its icon spins
-while loading), **Mark all as read** (sent per
+while loading), an "Updated … ago" text on the right of the button group (in both menus; the
+footer of both shows an "Esc to close" hint on the right, hidden on touch screens), **Mark all as read** (sent per
 repository, so other organizations are untouched) and **Refresh** are in the menu.
 Clicking a row opens the issue in the side panel when it is loaded on the board,
 and the thread on GitHub otherwise. The list is read with `GET /notifications?all=true`

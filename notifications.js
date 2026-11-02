@@ -182,7 +182,9 @@ function updateNotificationsBadge() {
   const count = unreadNotificationCount();
   badge.hidden = count === 0;
   badge.textContent = count > 99 ? "99+" : count;
-  button.setAttribute("aria-label", count === 0 ? "Notifications" : `Notifications, ${count} unread`);
+  const label = count === 0 ? "Notifications" : `Notifications, ${count} unread`;
+  button.setAttribute("aria-label", label);
+  button.title = label;
 }
 
 async function fetchNotifications(run) {
@@ -385,6 +387,7 @@ function renderNotifications() {
   element.querySelector('[data-tab="all"]').textContent = `All (${items.length})`;
   element.querySelector('[data-tab="unread"]').textContent = `Unread (${unread.length})`;
   for (const tab of element.querySelectorAll(".notif-tab")) tab.setAttribute("aria-pressed", String(tab.dataset.tab === notificationsTab));
+  updateMenuTime(element, accessToken && !notificationsDenied ? notifications.time : 0);
   element.querySelector(".notif-mark-all").disabled = unread.length === 0;
   // The refresh icon spins while loading; the button keeps its size and place, so nothing in the menu moves.
   const refresh = element.querySelector(".notif-refresh");
@@ -444,7 +447,8 @@ function positionNotificationsMenu(element, trigger) {
 
 function closeNotificationsMenu(restoreFocus = true) {
   if (!notificationsMenu) return;
-  const { element, trigger, onOutside, onKey, onViewport } = notificationsMenu;
+  const { element, trigger, onOutside, onKey, onViewport, timer } = notificationsMenu;
+  clearInterval(timer);
   document.removeEventListener("pointerdown", onOutside, true);
   document.removeEventListener("keydown", onKey, true);
   window.removeEventListener("scroll", onViewport, true);
@@ -473,6 +477,7 @@ function notificationsMenuKeys(event, element) {
 
 function openNotificationsMenu(trigger) {
   closeNotificationsMenu(false);
+  closeOpenPullsMenu(false);
   const element = document.createElement("div");
   element.className = "notif-menu";
   element.setAttribute("popover", "manual");
@@ -489,10 +494,11 @@ function openNotificationsMenu(trigger) {
         <button type="button" class="notif-tab" data-tab="all" aria-pressed="false"></button>
         <button type="button" class="notif-tab" data-tab="unread" aria-pressed="false"></button>
       </div>
+      <span class="notif-updated" hidden></span>
     </div>
     <p class="notif-status" role="status" hidden></p>
     <ul class="notif-list"></ul>
-    <div class="notif-footer"><a href="https://github.com/notifications" target="_blank" rel="noopener">Open all on GitHub<md-icon>open_in_new</md-icon></a></div>
+    <div class="notif-footer"><a href="https://github.com/notifications" target="_blank" rel="noopener">Open all on GitHub<md-icon>open_in_new</md-icon></a><span class="notif-hint">Esc to close</span></div>
   `;
   document.body.append(element);
   element.showPopover();
@@ -511,6 +517,7 @@ function openNotificationsMenu(trigger) {
   document.addEventListener("keydown", state.onKey, true);
   window.addEventListener("scroll", state.onViewport, true);
   window.addEventListener("resize", state.onViewport);
+  state.timer = setInterval(() => updateMenuTime(element, accessToken && !notificationsDenied ? notifications.time : 0), MENU_TIME_REFRESH_MS);
   notificationsMenu = state;
 
   element.addEventListener("click", handleNotificationsClick);

@@ -75,8 +75,8 @@
         <div class="toolbar-row">
           <div class="heading-actions">
             <md-filled-button id="add-button" type="button"><md-icon slot="icon">add</md-icon>Add</md-filled-button>
-            <md-filled-tonal-button id="notifications-button" type="button" aria-haspopup="dialog" aria-expanded="false"><md-icon slot="icon">notifications</md-icon>Notifications<span id="notifications-badge" class="notifications-badge" hidden></span></md-filled-tonal-button>
-            <md-filled-tonal-button id="pulls-button" type="button"><md-icon slot="icon">merge_type</md-icon>Pull requests<span id="pulls-badge" class="pulls-badge" hidden></span></md-filled-tonal-button>
+            <span class="toolbar-icon"><md-filled-tonal-icon-button id="notifications-button" type="button" aria-label="Notifications" title="Notifications" aria-haspopup="dialog" aria-expanded="false"><md-icon>inbox</md-icon></md-filled-tonal-icon-button><span id="notifications-badge" class="notifications-badge" hidden></span></span>
+            <span class="toolbar-icon"><md-filled-tonal-icon-button id="pulls-button" type="button" aria-label="Pull requests" title="Pull requests" aria-haspopup="dialog" aria-expanded="false"><md-icon>merge_type</md-icon></md-filled-tonal-icon-button><span id="pulls-badge" class="pulls-badge" hidden></span></span>
             <md-outlined-button id="archives-button" type="button"><md-icon slot="icon">archive</md-icon>Archives</md-outlined-button>
           </div>
           <div id="filter-bar" class="filter-bar" role="group" aria-label="Filters"></div>
