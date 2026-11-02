@@ -1517,6 +1517,25 @@ md-outlined-text-field {
   min-height: 24px;
 }
 
+/* The description is a plain block of the panel's scrolling column: it is as tall as its content, between a comfortable
+   minimum and a maximum that keeps the timeline in view, and only then scrolls inside itself. */
+.panel-main > .desc-card {
+  --desc-min-height: 120px;
+  --desc-max-height: 60dvh;
+  flex: none;
+}
+
+.desc-body {
+  min-height: var(--desc-min-height);
+  max-height: var(--desc-max-height);
+  overflow-y: auto;
+}
+
+/* "No description provided." does not need the minimum height. */
+.desc-body:has(> .tl-empty:not(.desc-error)) {
+  min-height: 0;
+}
+
 .desc-status {
   display: flex;
   justify-content: center;
