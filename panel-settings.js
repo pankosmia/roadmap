@@ -512,7 +512,7 @@ function repositoryPickerConfig() {
     placeholder: "Search repositories",
     load: (query) => {
       const needle = query.toLowerCase();
-      return draftRepoNames.filter((name) => name.toLowerCase().includes(needle)).map((name) => ({ key: name, headline: name, icon: "folder" }));
+      return draftRepoNames.filter((name) => name.toLowerCase().includes(needle)).map((name) => ({ key: name, headline: name, icon: "book_2" }));
     },
     isSelected: (item) => currentIssue()?.draft && repoOf(currentIssue())[1] === item.key,
     onSelect: (item) => {
