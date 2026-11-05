@@ -8,7 +8,10 @@ in the Pankosmia organization. Issues are grouped into **Unassigned**, **Backlog
 a Version label appear under **Unassigned**.
 
 The board is read-only until a user connects a GitHub personal access token with
-Issues read and write access to the repositories they want to update. The token
+Issues read and write access to the repositories they want to update (a fine-grained
+token must have `pankosmia` as resource owner and include each of those repositories;
+when GitHub answers "Resource not accessible by personal access token", the message
+names the repository and what to check on the token). The token
 is kept for the browser session only, unless **Remember me** is ticked in the
 connect dialog, in which case it is stored in the browser's local storage until
 the user disconnects.
@@ -85,7 +88,10 @@ missing title, Type or Stack turns the field red and focuses the first one, and
 the message goes away once everything is filled in. The Repository field is a
 searchable popover like Assignees, with the search box focused on open.
 Relationships chosen for a
-new issue are applied right after it is created.
+new issue are applied right after it is created, one second apart. When a relationship request
+gets no answer (lost connection, gateway timeout), GitHub may still have applied it: the
+relationship is read back, counted as done if it is there and sent once more if not; only
+then is a failure reported, with a message saying that the outcome may be unknown.
 
 On an existing issue, labels, assignees and relationships change instantly on
 screen and are saved in the background: label and assignee changes wait 600 ms
