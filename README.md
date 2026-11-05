@@ -302,8 +302,10 @@ token the menu explains this. GitHub's API has no "mark as unread".
 **Images** (`image-upload.js`): in the description and in comments (new or edited), an
 image can be pasted from the clipboard, dropped on the editor or chosen with the image
 button of the toolbar (PNG, JPEG, GIF or WebP, up to 10 MB). An `![Uploading …]()`
-placeholder is replaced by `![name](url)` once the upload is done, and Save / Comment
-wait for it. GitHub has no public API for its own image uploads (they need a web
+placeholder is replaced by `<img width="…" height="…" alt="name" src="url" />` once the
+upload is done (as GitHub does: the pixel size is visible and editable in the text, and it
+sets the size of the image in the Preview and in the posted message; an image whose size
+cannot be read becomes `![name](url)`), and Save / Comment wait for it. GitHub has no public API for its own image uploads (they need a web
 session), so the image is committed with the Contents API to the public repository
 `pankosmia/roadmap-assets`, in a `YYYY/MM/<uuid>.<ext>` file (one upload at a time, as
 commits to one branch conflict), and linked by its raw URL. A classic token needs

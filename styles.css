@@ -1431,6 +1431,7 @@ md-outlined-text-field {
 
 .markdown-body img {
   max-width: 100%;
+  height: auto;
 }
 
 .markdown-body a {
@@ -2871,6 +2872,7 @@ a.tl-actor:hover,
 
 .tl-comment-body img {
   max-width: 100%;
+  height: auto;
 }
 
 .tl-tone-closed .tl-card-header {
