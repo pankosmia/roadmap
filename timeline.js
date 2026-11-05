@@ -662,7 +662,7 @@ function renderTimeline() {
 
 function renderTimelineChrome() {
   if (!timelineUi) return;
-  const { section, filters, expand, order, composer, readonly, send, close, error } = timelineUi;
+  const { section, filters, expand, order, composer, readonly, send, review, closeSplit, close, reopen, error } = timelineUi;
   const issue = currentIssue();
   const timeline = panelTimeline;
   section.hidden = !issue || Boolean(issue.draft);
@@ -687,8 +687,16 @@ function renderTimelineChrome() {
   const closed = isClosed(issue);
   const busy = timeline.posting || stateChangeBusy;
   send.disabled = busy || !text;
+  review.hidden = !canReview(issue);
+  review.disabled = busy;
+  review.querySelector(".tl-review-label").textContent = text ? "Review with comment" : "Review";
+  closeSplit.hidden = closed;
   close.disabled = busy;
-  close.querySelector(".tl-close-label").textContent = closed ? (text ? "Reopen with comment" : "Reopen issue") : text ? "Close with comment" : "Close issue";
+  closeSplit.querySelector(".close-menu-toggle").disabled = busy;
+  close.querySelector(".tl-close-label").textContent = text ? "Close with comment" : "Close issue";
+  reopen.hidden = !closed;
+  reopen.disabled = busy;
+  reopen.querySelector(".tl-reopen-label").textContent = text ? "Reopen with comment" : "Reopen issue";
   timelineUi.avatar.src = currentLogin ? `https://github.com/${encodeURIComponent(currentLogin)}.png?size=64` : "";
   timelineUi.avatar.hidden = !currentLogin;
   error.hidden = !error.textContent;
@@ -918,45 +926,68 @@ function showComposerError(message) {
   timelineUi.error.hidden = !message;
 }
 
-// With "close" or "reopen", the comment (if any) is posted first, then the state changes, as on GitHub.
-async function submitComment(stateAction = null) {
-  const issue = currentIssue();
+// Posts the typed comment, if any. Resolves to false when it could not be posted.
+async function postComposerComment() {
   const timeline = panelTimeline;
+  const issue = currentIssue();
   const text = timelineUi.editor.value.trim();
-  if (!issue || issue.draft || timeline.posting || (!text && !stateAction)) return;
+  if (!text) return true;
+  if (!issue || issue.draft || timeline.posting) return false;
   if (!accessToken) {
     openAuthDialog();
-    return;
+    return false;
   }
   timeline.posting = true;
   showComposerError("");
   renderTimelineChrome();
   try {
-    if (text) {
-      const comment = await githubRequest(
-        `${issueEndpoint(issue)}/comments`,
-        { method: "POST", headers: { "Content-Type": "application/json", Accept: TIMELINE_ACCEPT }, body: JSON.stringify({ body: text }) },
-        accessToken
-      );
-      timeline.pages.get(timeline.lastPage)?.push({ ...comment, event: "commented", actor: comment.user });
-      if (panelTimeline === timeline) {
-        timelineUi.editor.value = "";
-        timelineUi.editor.showWrite();
-      } else {
-        // The user went to another tab meanwhile; the typed text is cleared when this tab is shown again.
-        timeline.postedWhileAway = true;
-      }
+    const comment = await githubRequest(
+      `${issueEndpoint(issue)}/comments`,
+      { method: "POST", headers: { "Content-Type": "application/json", Accept: TIMELINE_ACCEPT }, body: JSON.stringify({ body: text }) },
+      accessToken
+    );
+    timeline.pages.get(timeline.lastPage)?.push({ ...comment, event: "commented", actor: comment.user });
+    if (panelTimeline === timeline) {
+      timelineUi.editor.value = "";
+      timelineUi.editor.showWrite();
+    } else {
+      // The user went to another tab meanwhile; the typed text is cleared when this tab is shown again.
+      timeline.postedWhileAway = true;
     }
   } catch (error) {
     if (panelTimeline === timeline) showComposerError(`Could not post the comment: ${apiErrorMessage(error)}`);
     timeline.posting = false;
     renderTimelineChrome();
-    return;
+    return false;
   }
   timeline.posting = false;
   renderTimeline();
-  if (stateAction === "close") await closeIssue(issue, "completed");
+  return true;
+}
+
+// The typed comment is not posted, so the user is warned before the issue is closed.
+async function closeWithoutComment(issue) {
+  const confirmed = await confirmTimelineAction({
+    headline: "Close without commenting?",
+    message: "Your comment has not been posted. It stays in the editor, where you can still post it after closing.",
+    confirmText: "Close issue"
+  });
+  if (confirmed) await closeIssue(issue, "completed");
+}
+
+// With "close", "reopen" or "review", the comment (if any) is posted first, then the issue changes, as on GitHub.
+// The reason only applies to "close".
+async function submitComment(stateAction = null, reason = "completed") {
+  const issue = currentIssue();
+  if (!issue || issue.draft || panelTimeline.posting || (!timelineUi.editor.value.trim() && !stateAction)) return;
+  if (!accessToken) {
+    openAuthDialog();
+    return;
+  }
+  if (!(await postComposerComment())) return;
+  if (stateAction === "close") await closeIssue(issue, reason);
   else if (stateAction === "reopen") await requestReopen(issue);
+  else if (stateAction === "review") await reviewIssue(issue);
   refreshTimelineSoon();
 }
 
@@ -1189,7 +1220,12 @@ function createTimeline(container) {
     <div class="timeline-composer-main">
       <p class="timeline-composer-error auth-error" role="alert" hidden></p>
       <div class="timeline-composer-actions">
-        <md-outlined-button class="tl-close" type="button"><md-icon slot="icon">check_circle</md-icon><span class="tl-close-label">Close issue</span></md-outlined-button>
+        <md-outlined-button class="tl-review" type="button" hidden><md-icon slot="icon">rate_review</md-icon><span class="tl-review-label">Review</span></md-outlined-button>
+        <div class="close-split">
+          <md-outlined-button class="close-main tl-close" type="button"><md-icon slot="icon">check_circle</md-icon><span class="tl-close-label">Close issue</span></md-outlined-button>
+          <md-outlined-icon-button class="close-menu-toggle" type="button" aria-label="More close options" aria-haspopup="menu" aria-expanded="false"><md-icon>arrow_drop_down</md-icon></md-outlined-icon-button>
+        </div>
+        <md-outlined-button class="tl-reopen" type="button" hidden><md-icon slot="icon">undo</md-icon><span class="tl-reopen-label">Reopen issue</span></md-outlined-button>
         <md-filled-button class="tl-send" type="button" disabled>Comment</md-filled-button>
       </div>
     </div>
@@ -1224,7 +1260,10 @@ function createTimeline(container) {
     editor,
     avatar: composer.querySelector(".timeline-composer-avatar"),
     send: composer.querySelector(".tl-send"),
+    review: composer.querySelector(".tl-review"),
+    closeSplit: composer.querySelector(".close-split"),
     close: composer.querySelector(".tl-close"),
+    reopen: composer.querySelector(".tl-reopen"),
     error: composer.querySelector(".timeline-composer-error")
   };
 
@@ -1244,9 +1283,22 @@ function createTimeline(container) {
     renderTimeline();
   });
   timelineUi.send.addEventListener("click", () => submitComment());
-  timelineUi.close.addEventListener("click", () => {
-    const issue = currentIssue();
-    if (issue) submitComment(isClosed(issue) ? "reopen" : "close");
+  timelineUi.review.addEventListener("click", () => submitComment("review"));
+  timelineUi.reopen.addEventListener("click", () => submitComment("reopen"));
+  // A typed comment makes the main button "Close with comment"; plain closing then moves into the menu.
+  setupCloseSplit(timelineUi.closeSplit, {
+    entries: () =>
+      timelineUi.editor.value.trim()
+        ? [{ action: "silent", icon: "check_circle", text: "Close issue", hint: "Without posting the comment" }, ...CLOSE_REASONS.slice(1)]
+        : CLOSE_REASONS,
+    onMain: () => submitComment("close"),
+    onChoose: (action) => {
+      const issue = currentIssue();
+      if (!issue) return;
+      if (action === "silent") closeWithoutComment(issue);
+      else if (action === "duplicate") openDuplicateDialog(issue, { beforeClose: postComposerComment });
+      else submitComment("close", action);
+    }
   });
   section.addEventListener("click", onTimelineClick);
   // A refresh that arrived while a comment was being typed is applied once the field is left.

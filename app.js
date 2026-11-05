@@ -9,6 +9,7 @@ const FLOWS = ["No Spec", "UI Design", "Spec'ing", "Spec'd", "Implement Now", "I
 const BACKLOG_FLOWS = FLOWS.slice(0, 4);
 const DEFAULT_FLOW = "No Spec";
 const DONE_FLOW = "Done";
+const REVIEW_FLOW = "Reviewing";
 const DETAIL_VERSIONS = ["Backlog", "Next", "Current"];
 const requestedVersion = new URLSearchParams(window.location.search).get("version");
 const detailVersion = document.body.dataset.page === "detail" && DETAIL_VERSIONS.includes(requestedVersion) ? requestedVersion : "";
@@ -836,7 +837,8 @@ function issueEndpoint(issue) {
 }
 
 // withSubIssues are closed or reopened together with the issue, following body.state.
-async function changeIssueState(issue, body, { duplicateOf = null, undoLabels = null, withSubIssues = [] } = {}) {
+// undo ({ message, run }) replaces the "Closed" snackbar for other changes.
+async function changeIssueState(issue, body, { duplicateOf = null, undoLabels = null, withSubIssues = [], undo = null } = {}) {
   if (!accessToken) {
     openAuthDialog();
     return false;
@@ -872,7 +874,9 @@ async function changeIssueState(issue, body, { duplicateOf = null, undoLabels = 
     renderBoard();
     summary.textContent = summaryText();
     refreshTimelineSoon();
-    if (undoLabels) {
+    if (undo) {
+      showUndo(undo.message, undo.run);
+    } else if (undoLabels) {
       const count = subResult.done.length;
       const together = count > 0 ? ` with ${count} ${count === 1 ? "subissue" : "subissues"}` : "";
       const moved = isArchived(merged) ? " and moved to the archives" : "";
@@ -902,6 +906,33 @@ async function closeIssue(issue, reason, duplicateOf = null) {
     current,
     { state: "closed", state_reason: reason, labels: labelsForClose(current) },
     { duplicateOf, undoLabels, withSubIssues }
+  );
+}
+
+// Review is offered on open issues of the Next and Current versions that are not yet in the Reviewing or Done flows.
+function canReview(issue) {
+  return !issue.draft && !isClosed(issue) && DONE_VERSIONS.includes(issueVersion(issue)) && ![REVIEW_FLOW, DONE_FLOW].includes(issueFlow(issue));
+}
+
+async function reviewIssue(issue) {
+  // Wait for queued label changes so that this change is built on the latest labels.
+  await runIssueSave(issue);
+  const current = issues.find((item) => item.id === issue.id) || issue;
+  if (!canReview(current)) return false;
+  const previousLabels = current.labels.map((label) => label.name);
+  const labels = [...previousLabels.filter((name) => !isFlowLabel(name)), flowLabelName(REVIEW_FLOW)];
+  return changeIssueState(
+    current,
+    { labels },
+    {
+      undo: {
+        message: `Moved #${current.number} to ${REVIEW_FLOW}.`,
+        run: () => {
+          const latest = issues.find((item) => item.id === current.id) || current;
+          return changeIssueState(latest, { labels: previousLabels });
+        }
+      }
+    }
   );
 }
 
@@ -1099,51 +1130,76 @@ function noteSubIssueFailures(issue, failed, state) {
 }
 
 let stateChangeBusy = false;
-let closeMenu = null;
 let duplicateDialog = null;
 let duplicateTarget = null;
 
-function setupCloseControls(panel) {
-  const group = panel.querySelector(".close-split");
-  closeMenu = document.createElement("md-menu");
-  closeMenu.setAttribute("positioning", "popover");
-  closeMenu.quick = true;
-  closeMenu.anchorElement = group;
-  closeMenu.innerHTML = `
-    <md-menu-item data-action="completed"><md-icon slot="start">check_circle</md-icon><div slot="headline">Close as completed</div></md-menu-item>
-    <md-menu-item data-action="not_planned"><md-icon slot="start">block</md-icon><div slot="headline">Close as not planned</div></md-menu-item>
-    <md-menu-item data-action="duplicate"><md-icon slot="start">content_copy</md-icon><div slot="headline">Close as duplicate</div></md-menu-item>
-  `;
-  group.append(closeMenu);
-  const toggle = panel.querySelector(".close-menu-toggle");
-  const syncExpanded = () => toggle.setAttribute("aria-expanded", String(closeMenu.open));
+const CLOSE_REASONS = [
+  { action: "completed", icon: "check_circle", text: "Close as completed" },
+  { action: "not_planned", icon: "block", text: "Close as not planned" },
+  { action: "duplicate", icon: "content_copy", text: "Close as duplicate" }
+];
+
+// Wires a split button made of .close-main and .close-menu-toggle. The menu entries ({ action, icon, text, hint })
+// are read each time the menu opens, so they can follow the state of the panel.
+function setupCloseSplit(group, { entries, onMain, onChoose }) {
+  const menu = document.createElement("md-menu");
+  menu.setAttribute("positioning", "popover");
+  menu.quick = true;
+  menu.anchorElement = group;
+  group.append(menu);
+  const toggle = group.querySelector(".close-menu-toggle");
+  const syncExpanded = () => toggle.setAttribute("aria-expanded", String(menu.open));
   toggle.addEventListener("click", () => {
-    closeMenu.open = !closeMenu.open;
+    if (!menu.open) {
+      menu.innerHTML = entries()
+        .map(
+          ({ action, icon, text, hint }) =>
+            `<md-menu-item data-action="${action}"><md-icon slot="start">${icon}</md-icon><div slot="headline">${text}</div>${hint ? `<div slot="supporting-text">${hint}</div>` : ""}</md-menu-item>`
+        )
+        .join("");
+    }
+    menu.open = !menu.open;
     syncExpanded();
   });
-  closeMenu.addEventListener("opened", syncExpanded);
-  closeMenu.addEventListener("closed", syncExpanded);
-  panel.querySelector(".close-main").addEventListener("click", () => {
-    const issue = currentIssue();
-    if (issue) closeIssue(issue, "completed");
-  });
-  closeMenu.addEventListener("close-menu", (event) => {
+  menu.addEventListener("opened", syncExpanded);
+  menu.addEventListener("closed", syncExpanded);
+  group.querySelector(".close-main").addEventListener("click", onMain);
+  menu.addEventListener("close-menu", (event) => {
     const action = event.detail.initiator?.dataset?.action;
-    const issue = currentIssue();
-    if (!action || !issue) return;
-    if (action === "duplicate") openDuplicateDialog(issue);
-    else closeIssue(issue, action);
+    if (action) onChoose(action);
   });
-  panel.querySelector(".reopen-button").addEventListener("click", () => {
+}
+
+function setupCloseControls(panel) {
+  const row = panel.querySelector(".panel-save-row");
+  setupCloseSplit(row.querySelector(".close-split"), {
+    entries: () => CLOSE_REASONS,
+    onMain: () => {
+      const issue = currentIssue();
+      if (issue) closeIssue(issue, "completed");
+    },
+    onChoose: (action) => {
+      const issue = currentIssue();
+      if (!issue) return;
+      if (action === "duplicate") openDuplicateDialog(issue);
+      else closeIssue(issue, action);
+    }
+  });
+  row.querySelector(".review-button").addEventListener("click", () => {
+    const issue = currentIssue();
+    if (issue) reviewIssue(issue);
+  });
+  row.querySelector(".reopen-button").addEventListener("click", () => {
     const issue = currentIssue();
     if (issue) requestReopen(issue);
   });
 }
 
 function renderStatusControls(issue) {
-  const { statusRow, blockedIcon, statusPill, closeSplit, reopenButton } = panelElements;
+  const { statusRow, blockedIcon, statusPill, reviewButton, closeSplit, reopenButton } = panelElements;
   statusRow.hidden = Boolean(issue.draft);
   closeSplit.hidden = Boolean(issue.draft) || isClosed(issue);
+  reviewButton.hidden = !canReview(issue);
   reopenButton.hidden = Boolean(issue.draft) || !isClosed(issue);
   if (issue.draft) return;
   const status = issueStatus(issue);
@@ -1155,6 +1211,7 @@ function renderStatusControls(issue) {
   const disabled = !accessToken || stateChangeBusy;
   closeSplit.querySelector(".close-main").disabled = disabled;
   closeSplit.querySelector(".close-menu-toggle").disabled = disabled;
+  reviewButton.disabled = disabled;
   reopenButton.disabled = disabled;
   reopenButton.textContent = "Reopen issue";
 }
@@ -1181,18 +1238,21 @@ function ensureDuplicateDialog() {
   duplicateDialog.querySelector(".duplicate-search").addEventListener("input", renderDuplicateResults);
   duplicateDialog.querySelector(".duplicate-cancel").addEventListener("click", () => duplicateDialog.close());
   duplicateDialog.querySelector(".duplicate-confirm").addEventListener("click", async () => {
-    const issue = duplicateDialog.issue;
+    const { issue, beforeClose } = duplicateDialog;
     const original = duplicateTarget;
     if (!issue || !original) return;
     duplicateDialog.close();
+    if (beforeClose && !(await beforeClose())) return;
     await closeIssue(issue, "duplicate", original);
   });
   return duplicateDialog;
 }
 
-function openDuplicateDialog(issue) {
+// beforeClose runs once the original is confirmed; the issue stays open when it resolves to false.
+function openDuplicateDialog(issue, { beforeClose = null } = {}) {
   const dialog = ensureDuplicateDialog();
   dialog.issue = issue;
+  dialog.beforeClose = beforeClose;
   duplicateTarget = null;
   dialog.querySelector(".duplicate-search").value = "";
   renderDuplicateResults();
@@ -1668,6 +1728,7 @@ function ensurePanel() {
           </div>
         </section>
         <div class="panel-save-row">
+          <md-outlined-button class="review-button" type="button" hidden><md-icon slot="icon">rate_review</md-icon>Review</md-outlined-button>
           <div class="close-split">
             <md-outlined-button class="close-main" type="button"><md-icon slot="icon">check_circle</md-icon>Close issue</md-outlined-button>
             <md-outlined-icon-button class="close-menu-toggle" type="button" aria-label="More close options" aria-haspopup="menu" aria-expanded="false"><md-icon>arrow_drop_down</md-icon></md-outlined-icon-button>
@@ -1722,6 +1783,7 @@ function ensurePanel() {
     statusRow: panel.querySelector(".status-row"),
     blockedIcon: panel.querySelector(".panel-blocked"),
     statusPill: panel.querySelector(".status-pill"),
+    reviewButton: panel.querySelector(".review-button"),
     closeSplit: panel.querySelector(".close-split"),
     reopenButton: panel.querySelector(".reopen-button"),
     controls: panel.querySelector(".panel-controls")
