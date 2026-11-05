@@ -20,6 +20,18 @@ function readAsBase64(file) {
   });
 }
 
+// The pixel size of the image, so that the editor can write it down; null when the browser cannot decode the file.
+async function imageSize(file) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const size = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+    return size;
+  } catch {
+    return { width: 0, height: 0 };
+  }
+}
+
 // Year and month folders keep the repository easy to browse and to clean by age.
 function assetPath(extension) {
   const now = new Date();
@@ -55,7 +67,7 @@ async function putAsset(path, content) {
   }
 }
 
-// Resolves to { url, alt } for the editor to turn into Markdown, rejects with a message fit for the user.
+// Resolves to { url, alt, width, height } for the editor to turn into Markdown, rejects with a message fit for the user.
 function uploadImageAsset(file) {
   const upload = async () => {
     const extension = ASSET_TYPES[file.type];
@@ -63,9 +75,10 @@ function uploadImageAsset(file) {
     if (!extension) throw new Error(`${file.name || "This file"} is not a PNG, JPEG, GIF or WebP image.`);
     if (file.size > ASSET_MAX_BYTES) throw new Error(`${file.name || "The image"} is larger than ${ASSET_MAX_BYTES / 1024 / 1024} MB.`);
     const content = await readAsBase64(file);
+    const { width, height } = await imageSize(file);
     try {
       const result = await putAsset(assetPath(extension), content);
-      return { url: result.content.download_url, alt: file.name.replace(/\.[^.]*$/, "") || "image" };
+      return { url: result.content.download_url, alt: file.name.replace(/\.[^.]*$/, "") || "image", width, height };
     } catch (error) {
       throw new Error(assetUploadError(error));
     }

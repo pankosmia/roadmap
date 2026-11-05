@@ -16,6 +16,16 @@ const TOOLBAR_ACTIONS = [
   { name: "tasks", icon: "checklist", label: "Task list" }
 ];
 
+// As GitHub does: an <img> tag with its size when it is known (the width and height can then be edited in the text,
+// and GitHub renders them in the preview and in the posted message), a plain Markdown image otherwise.
+function imageMarkup({ url, alt, width = 0, height = 0 }) {
+  if (width > 0 && height > 0) {
+    const text = alt.replace(/[&<>"\n]/g, " ").trim() || "image";
+    return `<img width="${width}" height="${height}" alt="${text}" src="${url}" />`;
+  }
+  return `![${alt.replace(/[[\]\n]/g, " ").trim() || "image"}](${url})`;
+}
+
 function lineStart(text, position) {
   return position === 0 ? 0 : text.lastIndexOf("\n", position - 1) + 1;
 }
@@ -66,7 +76,7 @@ function caretPoint(textarea, index) {
 
 // `mentions` is optional and turns on GitHub-style "@" suggestions: { local(query), remote(query) }.
 // local returns the people known at once, remote a promise of more (or null).
-// `uploadImage` is optional and turns on image upload (paste, drop, toolbar button): file => promise of { url, alt }.
+// `uploadImage` is optional and turns on image upload (paste, drop, toolbar button): file => promise of { url, alt, width, height }.
 function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mentions = null, uploadImage = null, label = "Description", placeholder = "Leave a description" }) {
   const element = document.createElement("div");
   element.className = "md-editor";
@@ -447,8 +457,7 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mention
     pendingUploads += 1;
     showStatus(`Uploading ${file.name || "image"}…`);
     try {
-      const { url, alt } = await uploadImage(file);
-      replacePlaceholder(placeholder, `![${alt.replace(/[[\]\n]/g, " ").trim() || "image"}](${url})`);
+      replacePlaceholder(placeholder, imageMarkup(await uploadImage(file)));
       pendingUploads -= 1;
       if (pendingUploads === 0) showStatus("");
     } catch (error) {
