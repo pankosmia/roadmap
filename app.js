@@ -126,10 +126,21 @@ async function fetchWithRetry(url, options) {
 
 // Returns the parsed body together with the response, for callers that need its status or headers (e.g. Link).
 async function githubRequestWithResponse(url, options = {}, token = "") {
-  const response = await fetchWithRetry(url, {
-    ...options,
-    headers: { ...requestHeaders(token), ...options.headers }
-  });
+  const mutation = !isReadRequest(url, options);
+  let response;
+  try {
+    response = await fetchWithRetry(url, {
+      ...options,
+      headers: { ...requestHeaders(token), ...options.headers }
+    });
+  } catch (error) {
+    // The browser only says "Failed to fetch", whether the request never left or its response was lost.
+    const failure = new Error(error.message);
+    failure.networkError = true;
+    failure.unknownOutcome = mutation;
+    failure.url = url;
+    throw failure;
+  }
   if (!response.ok) {
     let message = `GitHub returned ${response.status}.`;
     try {
@@ -140,11 +151,17 @@ async function githubRequestWithResponse(url, options = {}, token = "") {
     }
     const failure = new Error(message);
     failure.status = response.status;
+    failure.url = url;
     failure.authenticated = Boolean(token);
+    failure.requestId = response.headers.get("x-github-request-id") || "";
+    // Only classic tokens come with an X-OAuth-Scopes header.
+    failure.classicToken = response.headers.has("x-oauth-scopes");
+    failure.unknownOutcome = mutation && TRANSIENT_STATUSES.includes(response.status);
     failure.rateLimited =
       response.status === 429 ||
       (response.status === 403 &&
         (response.headers.get("x-ratelimit-remaining") === "0" || /rate limit/i.test(message)));
+    failure.accessDenied = !failure.rateLimited && [401, 403].includes(response.status) && /not accessible by/i.test(message);
     const reset = Number(response.headers.get("x-ratelimit-reset"));
     const retryAfter = Number(response.headers.get("retry-after"));
     if (retryAfter > 0) failure.retryAt = Date.now() + retryAfter * 1000;
@@ -158,14 +175,38 @@ async function githubRequest(url, options = {}, token = "") {
   return (await githubRequestWithResponse(url, options, token)).data;
 }
 
+// The repository an API URL points at, e.g. "pankosmia/roadmap" for .../repos/pankosmia/roadmap/issues/1.
+function repoFromApiUrl(url) {
+  const match = /\/repos\/([^/]+)\/([^/?#]+)/.exec(url || "");
+  return match ? `${decodeURIComponent(match[1])}/${decodeURIComponent(match[2])}` : "";
+}
+
 function apiErrorMessage(error) {
-  if (!error.rateLimited) return error.message;
-  const when = error.retryAt
-    ? ` Try again at ${new Date(error.retryAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`
-    : " Try again later.";
-  return error.authenticated
-    ? `GitHub's API limit for your token has been reached.${when}`
-    : `GitHub's unauthenticated API limit has been reached. Connect a token to raise it.${when}`;
+  if (error.rateLimited) {
+    const when = error.retryAt
+      ? ` Try again at ${new Date(error.retryAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`
+      : " Try again later.";
+    return error.authenticated
+      ? `GitHub's API limit for your token has been reached.${when}`
+      : `GitHub's unauthenticated API limit has been reached. Connect a token to raise it.${when}`;
+  }
+  const reference = error.requestId ? ` (GitHub request ${error.requestId})` : "";
+  if (error.accessDenied) {
+    const repo = repoFromApiUrl(error.url);
+    const where = repo ? ` in ${repo}` : "";
+    const fix = error.classicToken
+      ? "A classic token needs the public_repo scope and, when the organization uses SAML single sign-on, must be authorized for it."
+      : "A fine-grained token must have the organization as resource owner, include this repository, and have the Issues permission set to Read and write; other repositories may still work.";
+    return `GitHub refused this change: your token is not allowed to edit issues${where}. ${fix} Edit the token on GitHub, then connect it again.${reference}`;
+  }
+  if (error.networkError) {
+    const outcome = error.unknownOutcome
+      ? "the result of this change is unknown and it may have been applied. Check on GitHub before trying again"
+      : "check your connection and try again";
+    return `Could not reach GitHub (no response from the network, a blocker or a timeout): ${outcome}.`;
+  }
+  if (error.unknownOutcome) return `GitHub did not answer in time (${error.message.replace(/\.$/, "")}): this change may have been applied. Check on GitHub before trying again.${reference}`;
+  return error.message;
 }
 
 const ISSUES_CACHE_KEY = "roadmap-issues-cache";

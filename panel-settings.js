@@ -19,6 +19,9 @@ const DEVELOPMENT_QUERY = `query($owner: String!, $name: String!, $number: Int!)
   }
 }`;
 const PICKER_SEARCH_DELAY = 300;
+const RELATION_CHECK_DELAY = 1500;
+// GitHub asks for about one second between requests that change something.
+const RELATION_REQUEST_GAP = 1000;
 
 let panelExtras = newPanelExtras("");
 let picker = null;
@@ -178,6 +181,40 @@ function mutateRelation(issue, kind, item, adding) {
   }
 }
 
+// Whether the relationship is on GitHub now, read from the issue that was changed.
+async function relationPresent(issue, kind, item) {
+  const base = issueApiUrl(repoOf(issue).join("/"), issue.number);
+  if (kind === "parent") {
+    try {
+      return (await githubRequest(`${base}/parent`, {}, accessToken)).id === item.id;
+    } catch (error) {
+      if (error.status === 404) return false;
+      throw error;
+    }
+  }
+  const path = { subIssues: "/sub_issues", blockedBy: "/dependencies/blocked_by", blocking: "/dependencies/blocking" }[kind];
+  return (await fetchAllPages(`${base}${path}`)).some((related) => related.id === item.id);
+}
+
+// Without an answer from GitHub (lost connection, gateway timeout) a change may still have been made.
+// The relationship is then checked: it counts as done if it is as wanted, and is sent once more if it is not.
+async function applyRelation(issue, kind, item, adding) {
+  try {
+    return await mutateRelation(issue, kind, item, adding);
+  } catch (error) {
+    if (!error.unknownOutcome) throw error;
+    await new Promise((resolve) => setTimeout(resolve, RELATION_CHECK_DELAY));
+    let present;
+    try {
+      present = await relationPresent(issue, kind, item);
+    } catch {
+      throw error;
+    }
+    if (present === adding) return null;
+    return mutateRelation(issue, kind, item, adding);
+  }
+}
+
 async function changeRelation(issue, kind, item, adding) {
   if (!accessToken) {
     openAuthDialog();
@@ -205,7 +242,7 @@ function queueRelationJob(issue, kind, item, adding, key) {
   relationJobs += 1;
   relationQueue = relationQueue.then(async () => {
     try {
-      await mutateRelation(issue, kind, item, adding);
+      await applyRelation(issue, kind, item, adding);
       clearIssuesCache();
     } catch (error) {
       const message = `Could not update the relationships of ${repoOf(issue)[1]}#${issue.number}: ${apiErrorMessage(error)}`;
@@ -226,9 +263,10 @@ function queueRelationJob(issue, kind, item, adding, key) {
 async function applyDraftRelationships(created, relations) {
   const jobs = RELATION_KINDS.flatMap(({ key }) => (key === "parent" ? (relations.parent ? [[key, relations.parent]] : []) : relations[key].map((item) => [key, item])));
   const failures = [];
-  for (const [kind, item] of jobs) {
+  for (const [index, [kind, item]] of jobs.entries()) {
+    if (index > 0) await new Promise((resolve) => setTimeout(resolve, RELATION_REQUEST_GAP));
     try {
-      await mutateRelation(created, kind, item, true);
+      await applyRelation(created, kind, item, true);
     } catch (error) {
       failures.push(`${item.repo}#${item.number} (${apiErrorMessage(error)})`);
     }
