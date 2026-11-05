@@ -2283,7 +2283,10 @@ md-icon.pr-closed { color: var(--pr-color); }
 }
 
 .close-split[hidden],
-.reopen-button[hidden] { display: none; }
+.review-button[hidden],
+.reopen-button[hidden],
+.tl-review[hidden],
+.tl-reopen[hidden] { display: none; }
 
 .duplicate-dialog {
   max-width: min(720px, calc(100vw - 48px));

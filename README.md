@@ -36,6 +36,10 @@ GitHub). Once connected, the panel lets you:
 - manage Parent, Sub-issues, Blocked by and Blocking relationships, searching
   issues across the whole organization, from the Relationships heading.
 
+Open issues of Next and Current that are not yet in the Reviewing or Done flows get a
+**Review** button in the panel (left of Close, under the description and below the
+timeline). It moves the issue to the Reviewing flow, with a snackbar and **Undo**.
+
 Closing an issue (Close button, Flow menu or moving it to Done) shows a snackbar
 with **Undo**, which reopens it with its previous labels (and deletes the
 "Duplicate of …" comment when it was closed as duplicate). When the issue has open
@@ -106,8 +110,11 @@ first (until 20 items are shown), and **Load older items** fetches the rest.
 The arrow button switches between oldest first (composer at the end) and newest
 first (composer on top); the choice is stored in `localStorage`
 (`roadmap-timeline-order`) and applies to every panel and to the other tabs.
-With a token you can write comments in a Markdown editor (**Close with comment** /
-**Reopen with comment** post the comment, then change the state), quote or copy the
+With a token you can write comments in a Markdown editor (**Review with comment**,
+**Close with comment** / **Reopen with comment** post the comment, then change the
+issue; the Close button at the bottom is a split button like the one under the
+description, and while a comment is typed its menu starts with a plain **Close issue**
+that asks for confirmation and leaves the comment unposted), quote or copy the
 link of a comment, add and remove reactions, and edit or delete your own comments
 (repository admins can delete any comment). A draft comment or an open comment edit
 counts as unsaved changes when the panel closes. The timeline follows the board's
