@@ -46,11 +46,14 @@ const NOTIFICATION_ICONS = {
 
 const NOTIFICATION_STATE_BATCH = 50;
 
-// Material Symbols has no icon for "mark all as read": the envelope of mark_email_read with the double check of done_all.
+const DONE_ALL_PATH = "M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z";
+
+// Material Symbols has no icon for "mark all as read": the "mail" envelope with the "done_all" icon (scaled down) on its
+// bottom right. The envelope is masked around the checks: the mask is the checks grown by 2px (stroke 4 / scale 0.65).
 const MARK_ALL_READ_ICON = `<svg class="notif-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
-  <mask id="notif-read-all-mask"><rect width="24" height="24" fill="#fff"/><path d="M8 17.5l3 3 7.5-8M14 20.5l7.5-8" stroke="#000" stroke-width="4.6"/></mask>
-  <g mask="url(#notif-read-all-mask)"><rect x="2" y="4" width="18" height="14.5" rx="2"/><path d="M2.5 6.5L11 12l8.5-5.5"/></g>
-  <path d="M8 17.5l3 3 7.5-8M14 20.5l7.5-8"/>
+  <mask id="notif-read-all-mask"><rect width="24" height="24" fill="#fff"/><path transform="translate(7.9 10.5) scale(.65)" fill="#000" stroke="#000" stroke-width="6.15" d="${DONE_ALL_PATH}"/></mask>
+  <g mask="url(#notif-read-all-mask)"><rect x="2.5" y="4.5" width="19" height="15" rx="2"/><path d="M3 7l9 6 9-6"/></g>
+  <path transform="translate(7.9 10.5) scale(.65)" fill="currentColor" stroke="none" d="${DONE_ALL_PATH}"/>
 </svg>`;
 
 function readNotificationsCache() {
