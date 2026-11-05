@@ -411,7 +411,11 @@ async function loadColumnLabelColors() {
   }
 }
 
-function renderBoard() {
+// A re-render keeps the scroll position of the board, of its columns and of the page, unless the caller changes what is listed.
+function renderBoard({ resetScroll = false } = {}) {
+  const listScrolls = new Map([...board.querySelectorAll(".issue-list")].map((list) => [list.dataset.dropVersion, list.scrollTop]));
+  const { scrollX, scrollY } = window;
+  const boardLeft = board.scrollLeft;
   board.replaceChildren();
   refreshFilterOptions();
   const topLevelIssues = issues.filter((issue) => isOnBoard(issue) && !isNestedSubIssue(issue) && matchesSearch(issue) && passesFilters(issue));
@@ -464,6 +468,10 @@ function renderBoard() {
     }
     board.append(column);
   }
+  if (resetScroll) return;
+  board.scrollLeft = boardLeft;
+  for (const list of board.querySelectorAll(".issue-list")) list.scrollTop = listScrolls.get(list.dataset.dropVersion) || 0;
+  window.scrollTo(scrollX, scrollY);
 }
 
 function subIssueProgress(issue) {
@@ -1854,6 +1862,7 @@ function showPanelIssue(issue, saved) {
   refreshPanel();
   if (saved) finishPanelRestore(saved);
   else resetPanelScroll();
+  syncIssueUrl();
   if (panelMeta.labels === null || panelMeta.assignees === null) loadPanelMeta(issue);
 }
 
@@ -1970,6 +1979,7 @@ function closePanel() {
   endPanelTabs();
   panelElements.overlay.hidden = true;
   panelElements.panel.hidden = true;
+  syncIssueUrl();
 }
 
 function refreshPanel() {
@@ -2532,7 +2542,7 @@ cancelAuth.addEventListener("click", closeAuthDialog);
 function applySearch() {
   searchTerm = searchInput.value.trim().toLowerCase();
   searchClear.hidden = searchInput.value === "";
-  if (issues.length > 0) renderBoard();
+  if (issues.length > 0) renderBoard({ resetScroll: true });
 }
 
 searchInput.addEventListener("input", applySearch);
@@ -2560,7 +2570,12 @@ async function restoreToken() {
   }
 }
 
-restoreToken().finally(loadIssues).finally(startLiveSync);
+restoreToken()
+  .finally(loadIssues)
+  .finally(() => {
+    followIssueUrl();
+    startLiveSync();
+  });
 
 function initThemeToggle() {
   const themeButton = document.querySelector("#theme-button");

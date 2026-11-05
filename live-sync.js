@@ -209,7 +209,7 @@ function applyRemoteBatches(batches) {
   if (changes.length === 0) return;
 
   saveIssuesCache();
-  renderBoardKeepingPosition();
+  renderBoard();
   summary.textContent = summaryText();
   syncOpenPanel(panelState, changes);
   refreshChangedOrders(changes);
@@ -217,16 +217,6 @@ function applyRemoteBatches(batches) {
   const changedIds = changes.filter((change) => change.after).map((change) => change.after.id);
   highlightUpdated(changedIds);
   showSyncToast(changes.length);
-}
-
-function renderBoardKeepingPosition() {
-  const lists = new Map([...board.querySelectorAll(".issue-list")].map((list) => [list.dataset.dropVersion, list.scrollTop]));
-  const { scrollX, scrollY } = window;
-  const boardLeft = board.scrollLeft;
-  renderBoard();
-  board.scrollLeft = boardLeft;
-  for (const list of board.querySelectorAll(".issue-list")) list.scrollTop = lists.get(list.dataset.dropVersion) || 0;
-  window.scrollTo(scrollX, scrollY);
 }
 
 function capturePanelState() {

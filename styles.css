@@ -131,15 +131,46 @@ main {
   white-space: nowrap;
 }
 
-.heading-actions {
+/* The actions and the filters never wrap: when they do not fit, they scroll sideways and fade out on the side where more is hidden. */
+.heading-actions,
+.filter-bar {
+  --fade-start: 0px;
+  --fade-end: 0px;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 8px;
+  min-width: 0;
+  /* Room for the focus rings and the badges, which the scrolling area would clip. */
+  margin: -4px -2px;
+  padding: 4px 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent 100%);
 }
 
+.heading-actions::-webkit-scrollbar,
+.filter-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.heading-actions.can-scroll-start,
+.filter-bar.can-scroll-start { --fade-start: 28px; }
+.heading-actions.can-scroll-end,
+.filter-bar.can-scroll-end { --fade-end: 28px; }
+
+.heading-actions > *,
+.filter-bar > * {
+  flex: none;
+}
+
+/* The filters are centered when there is room for the actions on their side. toolbar-layout.js adds is-stacked
+   when actions and filters do not fit side by side: the actions then go above the filters. */
 .toolbar-row {
   display: grid;
-  grid-template-columns: 1fr minmax(0, auto) 1fr;
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 8px 16px;
 }
@@ -150,6 +181,18 @@ main {
 
 .toolbar-row .filter-bar {
   grid-column: 2;
+}
+
+.toolbar-row.is-stacked {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.toolbar-row.is-stacked .heading-actions {
+  justify-self: stretch;
+}
+
+.toolbar-row.is-stacked .filter-bar {
+  grid-column: 1;
 }
 
 .board-toolbar {
@@ -2012,14 +2055,6 @@ md-outlined-text-field {
 }
 
 @media (max-width: 700px) {
-  .toolbar-row {
-    grid-template-columns: 1fr;
-  }
-
-  .toolbar-row .filter-bar {
-    grid-column: 1;
-  }
-
   .top-app-bar {
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
@@ -2063,6 +2098,11 @@ md-outlined-text-field {
 
   .panel-tabs.can-scroll-start { --fade-start: 14px; }
   .panel-tabs.can-scroll-end { --fade-end: 14px; }
+
+  .heading-actions.can-scroll-start,
+  .filter-bar.can-scroll-start { --fade-start: 14px; }
+  .heading-actions.can-scroll-end,
+  .filter-bar.can-scroll-end { --fade-end: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2378,14 +2418,6 @@ md-icon.pr-closed { color: var(--pr-color); }
 .pulls-alert-chip md-icon { --md-icon-size: 14px; }
 
 /* Filters below the search bar */
-.filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
 .view-button-wrap,
 .filter-chip-wrap {
   position: relative;
