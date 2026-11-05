@@ -984,6 +984,10 @@ async function submitComment(stateAction = null, reason = "completed") {
     openAuthDialog();
     return;
   }
+  if (timelineUi.editor.uploading) {
+    showNotice("Wait for the image upload to finish.", true);
+    return;
+  }
   if (!(await postComposerComment())) return;
   if (stateAction === "close") await closeIssue(issue, reason);
   else if (stateAction === "reopen") await requestReopen(issue);
@@ -1000,6 +1004,7 @@ function startEdit(timeline, id) {
     renderPreview: renderMarkdownPreview,
     onSubmit: () => saveEdit(timeline, id),
     mentions: issueMentions,
+    uploadImage: uploadImageAsset,
     label: "Edit comment",
     placeholder: "Leave a comment"
   });
@@ -1038,6 +1043,11 @@ async function saveEdit(timeline, id) {
   const save = entry.element.querySelector(".tl-edit-save");
   const body = entry.editor.value;
   errorLine.hidden = true;
+  if (entry.editor.uploading) {
+    errorLine.textContent = "Wait for the image upload to finish.";
+    errorLine.hidden = false;
+    return;
+  }
   if (!body.trim()) {
     errorLine.textContent = "The comment cannot be empty.";
     errorLine.hidden = false;
@@ -1240,6 +1250,7 @@ function createTimeline(container) {
     onSubmit: () => submitComment(),
     onInput: () => renderTimelineChrome(),
     mentions: issueMentions,
+    uploadImage: uploadImageAsset,
     label: "Comment",
     placeholder: "Leave a comment"
   });

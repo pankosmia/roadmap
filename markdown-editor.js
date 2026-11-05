@@ -10,6 +10,7 @@ const TOOLBAR_ACTIONS = [
   { name: "quote", icon: "format_quote", label: "Quote" },
   { name: "code", icon: "code", label: "Code (Ctrl+E)" },
   { name: "link", icon: "link", label: "Link (Ctrl+K)" },
+  { name: "image", icon: "image", label: "Add an image" },
   { name: "bullets", icon: "format_list_bulleted", label: "Bulleted list" },
   { name: "numbers", icon: "format_list_numbered", label: "Numbered list" },
   { name: "tasks", icon: "checklist", label: "Task list" }
@@ -65,7 +66,8 @@ function caretPoint(textarea, index) {
 
 // `mentions` is optional and turns on GitHub-style "@" suggestions: { local(query), remote(query) }.
 // local returns the people known at once, remote a promise of more (or null).
-function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mentions = null, label = "Description", placeholder = "Leave a description" }) {
+// `uploadImage` is optional and turns on image upload (paste, drop, toolbar button): file => promise of { url, alt }.
+function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mentions = null, uploadImage = null, label = "Description", placeholder = "Leave a description" }) {
   const element = document.createElement("div");
   element.className = "md-editor";
   element.innerHTML = `
@@ -75,23 +77,27 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mention
         <md-primary-tab class="md-tab-preview">Preview</md-primary-tab>
       </md-tabs>
       <div class="md-editor-toolbar" role="toolbar" aria-label="Formatting">
-        ${TOOLBAR_ACTIONS.map((action) => `
+        ${TOOLBAR_ACTIONS.filter((action) => action.name !== "image" || uploadImage).map((action) => `
           <md-icon-button data-action="${action.name}" aria-label="${action.label}" title="${action.label}"><md-icon>${action.icon}</md-icon></md-icon-button>`).join("")}
       </div>
     </div>
     <textarea class="md-editor-input" spellcheck="true"></textarea>
     <div class="md-editor-preview markdown-body" hidden></div>
+    <p class="md-editor-status" role="status" hidden></p>
   `;
   const tabs = element.querySelector(".md-editor-tabs");
   const toolbar = element.querySelector(".md-editor-toolbar");
   const input = element.querySelector(".md-editor-input");
   const preview = element.querySelector(".md-editor-preview");
+  const status = element.querySelector(".md-editor-status");
   input.setAttribute("aria-label", label);
   input.placeholder = placeholder;
   tabs.setAttribute("aria-label", `${label} mode`);
   let previewRequest = 0;
   let previewing = false;
   let disabled = false;
+  let pendingUploads = 0;
+  let filePicker = null;
 
   const mention = { open: false, start: 0, query: "", local: [], remote: [], items: [], active: 0, timer: 0, request: 0 };
   let mentionList = null;
@@ -156,6 +162,7 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mention
       else wrapSelection("`", "`", "code");
     },
     link: insertLink,
+    image: () => filePicker?.click(),
     bullets: () => toggleLinePrefix(/^[-*+] (?!\[[ xX]\] )/, () => "- "),
     numbers: () => toggleLinePrefix(/^\d+[.)] /, (number) => `${number}. `),
     tasks: () => toggleLinePrefix(/^[-*+] \[[ xX]\] /, () => "- [ ] ")
@@ -415,7 +422,83 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mention
     }
   });
 
+  function showStatus(message, isError = false) {
+    status.hidden = !message;
+    status.textContent = message;
+    status.classList.toggle("md-editor-error", isError);
+    status.setAttribute("role", isError ? "alert" : "status");
+  }
+
+  // The text is swapped without moving the caret, and an upload whose placeholder was deleted is dropped.
+  function replacePlaceholder(placeholder, replacement) {
+    const index = input.value.indexOf(placeholder);
+    if (index === -1) return;
+    input.setRangeText(replacement, index, index + placeholder.length, "preserve");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  async function addImage(file) {
+    let placeholder = `![Uploading ${file.name || "image"}…]()`;
+    for (let copy = 2; input.value.includes(placeholder); copy += 1) placeholder = `![Uploading ${file.name || "image"} (${copy})…]()`;
+    const { selectionStart: start, selectionEnd: end, value } = input;
+    const before = start > 0 && value[start - 1] !== "\n" ? "\n" : "";
+    const text = `${before}${placeholder}\n`;
+    replaceRange(start, end, text, start + text.length, start + text.length);
+    pendingUploads += 1;
+    showStatus(`Uploading ${file.name || "image"}…`);
+    try {
+      const { url, alt } = await uploadImage(file);
+      replacePlaceholder(placeholder, `![${alt.replace(/[[\]\n]/g, " ").trim() || "image"}](${url})`);
+      pendingUploads -= 1;
+      if (pendingUploads === 0) showStatus("");
+    } catch (error) {
+      replacePlaceholder(`${placeholder}\n`, "");
+      pendingUploads -= 1;
+      showStatus(error.message, true);
+    }
+  }
+
+  function imageFiles(transfer) {
+    return [...(transfer?.files || [])].filter((file) => file.type.startsWith("image/"));
+  }
+
+  if (uploadImage) {
+    filePicker = document.createElement("input");
+    filePicker.type = "file";
+    filePicker.accept = ASSET_ACCEPT;
+    filePicker.multiple = true;
+    filePicker.hidden = true;
+    filePicker.addEventListener("change", () => {
+      const files = [...filePicker.files];
+      filePicker.value = "";
+      input.focus();
+      files.forEach(addImage);
+    });
+    element.append(filePicker);
+
+    input.addEventListener("dragover", (event) => {
+      if (disabled || !event.dataTransfer?.types.includes("Files")) return;
+      event.preventDefault();
+      element.classList.add("is-dropping");
+    });
+    for (const name of ["dragleave", "drop"]) input.addEventListener(name, () => element.classList.remove("is-dropping"));
+    input.addEventListener("drop", (event) => {
+      const files = imageFiles(event.dataTransfer);
+      if (disabled || !files.length) return;
+      event.preventDefault();
+      input.focus();
+      files.forEach(addImage);
+    });
+  }
+
   input.addEventListener("paste", (event) => {
+    const files = imageFiles(event.clipboardData);
+    // Cells copied from a spreadsheet come as text and as a picture: the text wins.
+    if (uploadImage && !disabled && files.length && !event.clipboardData.getData("text/plain")) {
+      event.preventDefault();
+      files.forEach(addImage);
+      return;
+    }
     const { selectionStart: start, selectionEnd: end, value } = input;
     const pasted = (event.clipboardData?.getData("text/plain") || "").trim();
     const selected = value.slice(start, end);
@@ -484,8 +567,12 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mention
     get value() {
       return input.value;
     },
+    get uploading() {
+      return pendingUploads > 0;
+    },
     set value(text) {
       input.value = text;
+      if (pendingUploads === 0) showStatus("");
       if (previewing) showPreview();
       onInput?.();
     },

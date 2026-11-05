@@ -8,7 +8,9 @@ in the Pankosmia organization. Issues are grouped into **Unassigned**, **Backlog
 a Version label appear under **Unassigned**.
 
 The board is read-only until a user connects a GitHub personal access token with
-Issues read and write access to the repositories they want to update (a fine-grained
+Issues read and write access to the repositories they want to update (a classic token
+with the `public_repo` and `notifications` scopes does everything, including image
+uploads and notifications; a fine-grained
 token must have `pankosmia` as resource owner and include each of those repositories;
 when GitHub answers "Resource not accessible by personal access token", the message
 names the repository and what to check on the token). The token
@@ -296,6 +298,17 @@ and the thread on GitHub otherwise. The list is read with `GET /notifications?al
 for the browser session. GitHub only serves notifications to a **classic token with
 the `notifications` scope** (plus `public_repo` to edit issues); with a fine-grained
 token the menu explains this. GitHub's API has no "mark as unread".
+
+**Images** (`image-upload.js`): in the description and in comments (new or edited), an
+image can be pasted from the clipboard, dropped on the editor or chosen with the image
+button of the toolbar (PNG, JPEG, GIF or WebP, up to 10 MB). An `![Uploading …]()`
+placeholder is replaced by `![name](url)` once the upload is done, and Save / Comment
+wait for it. GitHub has no public API for its own image uploads (they need a web
+session), so the image is committed with the Contents API to the public repository
+`pankosmia/roadmap-assets`, in a `YYYY/MM/<uuid>.<ext>` file (one upload at a time, as
+commits to one branch conflict), and linked by its raw URL. A classic token needs
+`public_repo`; a fine-grained token must include `pankosmia/roadmap-assets` with the
+Contents permission set to Read and write, otherwise the editor says so.
 
 On cards and in the Archives dialog, the linked pull request count is a filled badge
 in the color of the pull request state.
