@@ -103,7 +103,8 @@
     <md-dialog id="auth-dialog" aria-labelledby="auth-title">
       <div slot="headline" id="auth-title">Connect GitHub</div>
       <form id="auth-form" slot="content">
-        <p class="dialog-copy">Viewing is public. To edit issues, connect a GitHub personal access token with Issues read and write access to the repositories you want to edit. A fine-grained token must have pankosmia as resource owner and list each of those repositories (or all of them). To see your notifications, use a classic token that also has the notifications scope.</p>
+        <p class="dialog-copy">Viewing is public. To edit issues, connect a GitHub personal access token. Recommended: a <a href="https://github.com/settings/tokens/new?scopes=public_repo,notifications&amp;description=Pankosmia%20roadmap" target="_blank" rel="noopener">classic token</a> with the public_repo and notifications scopes. It covers editing issues, uploading images and notifications (authorize it for SSO if GitHub asks).</p>
+        <p class="dialog-copy">A fine-grained token also edits issues and uploads images, but cannot show notifications. It must have pankosmia as resource owner, include each repository you want to edit with Issues read and write, and include pankosmia/roadmap-assets with Contents read and write (images are stored there).</p>
         <md-outlined-text-field id="token-input" name="token" type="password" label="Personal access token" autocomplete="off" spellcheck="false" required autofocus></md-outlined-text-field>
         <label class="check-label"><md-checkbox id="remember-input"></md-checkbox> Remember me on this browser</label>
         <p class="token-note">By default your token is kept for this browser session only. If you tick "Remember me", it is stored in this browser's local storage until you disconnect.</p>
