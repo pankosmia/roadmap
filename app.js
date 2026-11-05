@@ -1790,7 +1790,8 @@ function ensurePanel() {
   descriptionEditor = createMarkdownEditor({
     renderPreview: renderMarkdownPreview,
     onSubmit: saveTitleAndDescription,
-    mentions: issueMentions
+    mentions: issueMentions,
+    uploadImage: uploadImageAsset
   });
   panel.querySelector(".panel-save-row").before(descriptionEditor.element);
   createTimeline(panel.querySelector(".panel-main"));
@@ -2150,6 +2151,10 @@ function validateDraft(draft, title) {
 async function saveTitleAndDescription() {
   const issue = currentIssue();
   if (!issue) return;
+  if (descriptionEditor.uploading) {
+    showPanelError("Wait for the image upload to finish.");
+    return;
+  }
   const title = panelElements.title.value.trim();
   if (issue.draft) {
     if (validateDraft(issue, title)) await createIssue(issue, title);
