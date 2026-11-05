@@ -154,6 +154,14 @@ an "all open issues" menu appears. The panel's × and Esc close every tab with o
 "New issue" is a tab of its own and keeps its fields. Issues of other organizations still
 open on GitHub, and so do pull requests.
 
+**Shareable link** (`issue-url.js`): the address bar names the issue of the active tab
+(`?issue=roadmap/123`, the repository without the `pankosmia/` prefix; on a version page it comes
+after `?version=…`). Opening the link opens that issue in the panel once the board has loaded, even
+a closed or archived one (it is fetched from GitHub); an unknown issue shows a notice. Opening or
+switching to an issue adds a browser history entry, so Back returns to the previous issue and then
+closes the panel (an unsaved tab still asks first). The "New issue" tab has no address: the URL
+stays as it was.
+
 Menus open and close without animation.
 
 The Settings column is 440px wide and sits next to the description from a 940px
@@ -219,6 +227,12 @@ a pending difference. The View button shows a colored dot when the chips
 differ from the view that was active before they were touched: the default view,
 or the saved view that was applied. Filters and views are stored in the browser's
 local storage (`roadmap-filters`) and shared by all pages.
+
+The toolbar (`toolbar-layout.js`) keeps its actions and its filters on one row each: the filters
+are centered, and as soon as the actions and the filters do not fit side by side the actions go
+above the filters. A row that is still too narrow scrolls sideways (fading edges, mouse wheel).
+The board keeps the scroll position of its columns when it is redrawn after an update; a new search
+text or filter selection scrolls the columns back to the top.
 
 The toolbar has **Add**, **Archives** and two tonal icon buttons, **Notifications**
 (inbox icon) and **Pull requests** (merge icon), each with a red count badge when

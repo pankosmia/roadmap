@@ -183,7 +183,7 @@ function filtersChanged() {
   refreshFilterOptions();
   syncFilterBar();
   if (issues.length > 0) {
-    renderBoard();
+    renderBoard({ resetScroll: true });
     summary.textContent = summaryText();
   }
 }
