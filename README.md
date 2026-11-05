@@ -252,7 +252,8 @@ in local storage as `roadmap-pulls-tab`; the Alerts label is red when there are 
 and the number of pull requests without a linked issue. Each row shows the state icon, title, repository,
 number, author and age, and links to the pull request. Pull
 requests linked to an issue in their Development area have a colored edge and a
-chip linking to each issue; orphan pull requests have a "No issue" chip.
+chip linking to each issue; orphan pull requests have a "No issue" chip. The "No issue" and
+alert chips are informative only: they sit inside the clickable row, stacked on its right.
 
 Pull requests can raise an alert, shown as a red chip on the row, the **Alerts**
 filter in the menu, and a red count badge on the button (hidden at 0).
@@ -271,11 +272,14 @@ counted in the red badge on the button, capped at 99+) until it is opened or mar
 as read with its envelope button; it then stays listed, no longer highlighted; the
 **check** button marks it as **done** and it goes away. Done is sent to GitHub
 after the 8 second **Undo** delay (or when the page is left), since GitHub's API
-cannot undo it. **All** / **Unread** button group (the Unread label is red when there are unread threads; All by default, the choice is remembered in
+cannot undo it. The header has **Mark all as read** (an envelope with a double check;
+every unread thread) and **Mark all as done** (double check; the threads of the current
+tab); both show an **Undo** snackbar and, for the same reason, only send their requests
+(at most 5 at a time for done) once it is gone. **All** / **Unread** button group (the Unread label is red when there are unread threads; All by default, the choice is remembered in
 local storage as `roadmap-notifications-tab`), the refresh button (its icon spins
 while loading), an "Updated … ago" text on the right of the button group (in both menus; the
 footer of both shows an "Esc to close" hint on the right, hidden on touch screens), **Mark all as read** (sent per
-repository, so other organizations are untouched) and **Refresh** are in the menu.
+repository, so other organizations are untouched), **Mark all as done** and **Refresh** are in the menu.
 The icon of each row follows the color code of the board: open issues are green, closed
 ones purple (gray when not planned or duplicate); pull requests are green (open), gray (draft),
 purple (merged) or red (closed). The states are read with one batched GraphQL request per 50 threads

@@ -2373,6 +2373,8 @@ md-icon.pr-closed { color: var(--pr-color); }
 /* Pull requests menu: it reuses the notif-* menu styles. Linked pull requests get a primary accent edge; orphans are marked by their chip. */
 .pulls-linked { border-left: 4px solid var(--md-sys-color-primary); }
 .pulls-open { text-decoration: none; }
+.pulls-flags { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 45%; }
+.pulls-flags > * { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .pulls-issues { display: flex; flex: none; flex-wrap: wrap; gap: 4px; justify-content: flex-end; padding-right: 8px; max-width: 45%; }
 
 .toolbar-icon { position: relative; display: inline-flex; }
@@ -3139,6 +3141,9 @@ a.tl-actor:hover,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Inline icon of "Mark all as read": drawn with strokes, so it overrides the filled style md-icon gives to slotted SVGs. */
+.notif-icon-svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
 .notif-row md-icon-button { flex: none; --md-icon-button-icon-size: 20px; --md-icon-button-state-layer-height: 36px; --md-icon-button-state-layer-width: 36px; }
 
