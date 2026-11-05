@@ -7,8 +7,10 @@ const NOTIFICATION_PAGE_SIZE = 50;
 const NOTIFICATION_MAX_PAGES = 6;
 const NOTIFICATION_TTL = 45 * 1000;
 const NOTIFICATION_OPEN_TTL = 15 * 1000;
-// Done is only sent once the Undo snackbar (8 s, see showUndo) is gone.
+// Read and done are only sent once the Undo snackbar (8 s, see showUndo) is gone.
 const NOTIFICATION_UNDO_MS = 8000;
+// "Mark all as done" sends one request per thread; this many run at the same time.
+const NOTIFICATION_DONE_CONCURRENCY = 5;
 const NOTIFICATION_DONE_LIMIT = 300;
 const NOTIFICATION_TAB_KEY = "roadmap-notifications-tab";
 const NOTIFICATION_CACHE_KEY = "roadmap-notifications-cache";
@@ -43,6 +45,13 @@ const NOTIFICATION_ICONS = {
 };
 
 const NOTIFICATION_STATE_BATCH = 50;
+
+// Material Symbols has no icon for "mark all as read": the envelope of mark_email_read with the double check of done_all.
+const MARK_ALL_READ_ICON = `<svg class="notif-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+  <mask id="notif-read-all-mask"><rect width="24" height="24" fill="#fff"/><path d="M8 17.5l3 3 7.5-8M14 20.5l7.5-8" stroke="#000" stroke-width="4.6"/></mask>
+  <g mask="url(#notif-read-all-mask)"><rect x="2" y="4" width="18" height="14.5" rx="2"/><path d="M2.5 6.5L11 12l8.5-5.5"/></g>
+  <path d="M8 17.5l3 3 7.5-8M14 20.5l7.5-8"/>
+</svg>`;
 
 function readNotificationsCache() {
   try {
@@ -119,7 +128,11 @@ let notificationsError = "";
 let notificationsDenied = false;
 let notificationsMenu = null;
 let notificationsTab = readNotificationsTab();
+// Threads hidden until their Done is sent (id -> group), and the groups waiting for their Undo delay.
 const pendingDone = new Map();
+const doneGroups = new Set();
+// The last "mark all as read", waiting for its Undo delay: { items, readAt, token, timer, sent }.
+let pendingRead = null;
 
 function notificationFromThread(thread) {
   return {
@@ -240,6 +253,19 @@ function visibleNotifications() {
   return notifications.items.filter((item) => !pendingDone.has(item.id));
 }
 
+// What the current tab lists.
+function shownNotifications() {
+  const items = visibleNotifications();
+  return notificationsTab === "unread" ? items.filter((item) => item.unread) : items;
+}
+
+// A list fetched while a "mark all as read" waits for its Undo delay still has those threads unread.
+function applyPendingRead(items) {
+  if (!pendingRead || pendingRead.token !== accessToken) return;
+  const ids = new Set(pendingRead.items.map((item) => item.id));
+  for (const item of items) if (ids.has(item.id) && Date.parse(item.updatedAt) <= Date.parse(pendingRead.readAt)) item.unread = false;
+}
+
 function unreadNotificationCount() {
   return accessToken && !notificationsDenied ? visibleNotifications().filter((item) => item.unread).length : 0;
 }
@@ -296,6 +322,7 @@ async function loadNotifications({ force = false, maxAge = NOTIFICATION_TTL } = 
   try {
     const result = await fetchNotifications(run);
     if (result) {
+      applyPendingRead(result.items);
       notifications = { time: Date.now(), ...result };
       saveNotificationsCache();
     }
@@ -317,8 +344,11 @@ function clearNotifications() {
   notificationsError = "";
   notificationsDenied = false;
   notifications = { time: 0, items: [], truncated: false };
-  for (const entry of pendingDone.values()) clearTimeout(entry.timer);
+  for (const group of doneGroups) clearTimeout(group.timer);
+  doneGroups.clear();
   pendingDone.clear();
+  if (pendingRead) clearTimeout(pendingRead.timer);
+  pendingRead = null;
   try {
     sessionStorage.removeItem(NOTIFICATION_CACHE_KEY);
   } catch {
@@ -345,68 +375,127 @@ async function markNotificationRead(item) {
   }
 }
 
+function notificationCountText(count) {
+  return count === 1 ? "1 notification" : `${count} notifications`;
+}
+
 // GitHub's "mark everything as read" call would also touch other organizations, so it is sent per repository.
-async function markAllNotificationsRead() {
+// GitHub cannot mark a thread as unread again, so the rows turn read at once and the request waits for the Undo delay.
+function markAllNotificationsRead() {
   const targets = visibleNotifications().filter((item) => item.unread);
   if (targets.length === 0) return;
-  const readAt = new Date().toISOString();
-  const byRepo = new Map();
-  for (const item of targets) {
-    item.unread = false;
-    byRepo.set(item.repo, [...(byRepo.get(item.repo) || []), item]);
-  }
+  if (pendingRead) commitAllRead(pendingRead);
+  const batch = { items: targets, readAt: new Date().toISOString(), token: accessToken, timer: 0, sent: false };
+  pendingRead = batch;
+  for (const item of targets) item.unread = false;
   notificationsRun += 1;
   saveNotificationsCache();
   renderNotifications();
+  showUndo(`${notificationCountText(targets.length)} marked as read`, () => {
+    if (batch.sent) return;
+    clearTimeout(batch.timer);
+    pendingRead = null;
+    const ids = new Set(batch.items.map((item) => item.id));
+    for (const item of notifications.items) if (ids.has(item.id)) item.unread = true;
+    notificationsRun += 1;
+    saveNotificationsCache();
+    renderNotifications();
+  });
+  batch.timer = setTimeout(() => commitAllRead(batch), NOTIFICATION_UNDO_MS);
+}
+
+async function commitAllRead(batch, keepalive = false) {
+  if (batch.sent) return;
+  batch.sent = true;
+  clearTimeout(batch.timer);
+  const byRepo = new Map();
+  for (const item of batch.items) byRepo.set(item.repo, [...(byRepo.get(item.repo) || []), item]);
   const repos = [...byRepo.keys()];
   const results = await Promise.allSettled(
     repos.map((repo) =>
       githubRequest(
         `${API_ROOT}/repos/${repo}/notifications`,
-        { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ last_read_at: readAt, read: true }) },
-        accessToken
+        { method: "PUT", keepalive, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ last_read_at: batch.readAt, read: true }) },
+        batch.token
       )
     )
   );
+  if (pendingRead === batch) pendingRead = null;
+  if (batch.token !== accessToken) return;
   const failed = results.map((result, index) => (result.status === "rejected" ? index : -1)).filter((index) => index >= 0);
   if (failed.length === 0) return;
-  for (const index of failed) for (const item of byRepo.get(repos[index])) item.unread = true;
+  const failedIds = new Set(failed.flatMap((index) => byRepo.get(repos[index]).map((item) => item.id)));
+  for (const item of notifications.items) if (failedIds.has(item.id)) item.unread = true;
+  notificationsRun += 1;
   saveNotificationsCache();
   renderNotifications();
   showNotice(`Could not mark all notifications as read: ${apiErrorMessage(results[failed[0]].reason)}`, true);
 }
 
-async function commitNotificationDone(entry, keepalive = false) {
-  clearTimeout(entry.timer);
-  const { item, token } = entry;
-  try {
-    await githubRequest(`${API_ROOT}/notifications/threads/${item.id}`, { method: "DELETE", keepalive }, token);
-    if (token === accessToken) {
-      rememberDoneThread(item.id, item.updatedAt);
-      notifications.items = notifications.items.filter((other) => other.id !== item.id);
-      saveNotificationsCache();
+async function runWithLimit(list, limit, task) {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, list.length) }, async () => {
+    while (next < list.length) await task(list[next++]);
+  });
+  await Promise.all(workers);
+}
+
+async function commitDoneGroup(group, keepalive = false) {
+  if (group.sent) return;
+  group.sent = true;
+  clearTimeout(group.timer);
+  const succeeded = new Set();
+  const failures = [];
+  await runWithLimit(group.items, keepalive ? group.items.length : NOTIFICATION_DONE_CONCURRENCY, async (item) => {
+    // A rate limit would fail every remaining request the same way.
+    if (failures.some((error) => error.rateLimited)) return;
+    try {
+      await githubRequest(`${API_ROOT}/notifications/threads/${item.id}`, { method: "DELETE", keepalive }, group.token);
+      succeeded.add(item.id);
+      if (group.token === accessToken) rememberDoneThread(item.id, item.updatedAt);
+    } catch (error) {
+      failures.push(error);
     }
-  } catch (error) {
-    if (token === accessToken) showNotice(`Could not mark the notification as done: ${apiErrorMessage(error)}`, true);
-  } finally {
-    if (pendingDone.get(item.id) === entry) pendingDone.delete(item.id);
-    renderNotifications();
+  });
+  if (group.token === accessToken) {
+    notifications.items = notifications.items.filter((item) => !succeeded.has(item.id));
+    saveNotificationsCache();
+  }
+  for (const item of group.items) if (pendingDone.get(item.id) === group) pendingDone.delete(item.id);
+  doneGroups.delete(group);
+  renderNotifications();
+  if (failures.length > 0 && group.token === accessToken) {
+    const subject = group.items.length === 1 ? "the notification" : `${notificationCountText(failures.length)}`;
+    showNotice(`Could not mark ${subject} as done: ${apiErrorMessage(failures[0])}`, true);
   }
 }
 
-// Done cannot be undone through GitHub's API, so the row is hidden at once and the request waits for the Undo delay.
-function doneNotification(item) {
-  for (const earlier of [...pendingDone.values()]) commitNotificationDone(earlier);
-  const entry = { item, token: accessToken, timer: 0 };
-  pendingDone.set(item.id, entry);
+// Done cannot be undone through GitHub's API, so the rows are hidden at once and the requests wait for the Undo delay.
+function doneNotifications(items, message) {
+  if (items.length === 0) return;
+  for (const earlier of [...doneGroups]) commitDoneGroup(earlier);
+  const group = { items, token: accessToken, timer: 0, sent: false };
+  doneGroups.add(group);
+  for (const item of items) pendingDone.set(item.id, group);
   notificationsRun += 1;
   renderNotifications();
-  showUndo("Notification marked as done", () => {
-    clearTimeout(entry.timer);
-    pendingDone.delete(item.id);
+  showUndo(message, () => {
+    if (group.sent) return;
+    clearTimeout(group.timer);
+    doneGroups.delete(group);
+    for (const item of items) if (pendingDone.get(item.id) === group) pendingDone.delete(item.id);
     renderNotifications();
   });
-  entry.timer = setTimeout(() => commitNotificationDone(entry), NOTIFICATION_UNDO_MS);
+  group.timer = setTimeout(() => commitDoneGroup(group), NOTIFICATION_UNDO_MS);
+}
+
+function doneNotification(item) {
+  doneNotifications([item], "Notification marked as done");
+}
+
+function markAllNotificationsDone() {
+  const targets = shownNotifications();
+  doneNotifications(targets, `${notificationCountText(targets.length)} marked as done`);
 }
 
 function openNotification(item) {
@@ -460,7 +549,8 @@ function renderNotifications() {
   unreadTab.classList.toggle("has-alerts", unread.length > 0);
   for (const tab of element.querySelectorAll(".notif-tab")) tab.setAttribute("aria-pressed", String(tab.dataset.tab === notificationsTab));
   updateMenuTime(element, accessToken && !notificationsDenied ? notifications.time : 0);
-  element.querySelector(".notif-mark-all").disabled = unread.length === 0;
+  element.querySelector(".notif-read-all").disabled = unread.length === 0;
+  element.querySelector(".notif-done-all").disabled = shown.length === 0;
   // The refresh icon spins while loading; the button keeps its size and place, so nothing in the menu moves.
   const refresh = element.querySelector(".notif-refresh");
   refresh.disabled = !accessToken || notificationsDenied;
@@ -558,7 +648,8 @@ function openNotificationsMenu(trigger) {
   element.innerHTML = `
     <div class="notif-header">
       <h4>Notifications</h4>
-      <md-icon-button class="notif-mark-all" aria-label="Mark all as read" title="Mark all as read"><md-icon>done_all</md-icon></md-icon-button>
+      <md-icon-button class="notif-read-all" aria-label="Mark all as read" title="Mark all as read"><md-icon>${MARK_ALL_READ_ICON}</md-icon></md-icon-button>
+      <md-icon-button class="notif-done-all" aria-label="Mark all as done" title="Mark all as done"><md-icon>done_all</md-icon></md-icon-button>
       <md-icon-button class="notif-refresh" aria-label="Refresh notifications" title="Refresh"><md-icon>refresh</md-icon></md-icon-button>
     </div>
     <div class="notif-tabs">
@@ -606,7 +697,8 @@ function handleNotificationsClick(event) {
     notificationsTab = tab.dataset.tab;
     saveNotificationsTab();
     renderNotifications();
-  } else if (target.closest(".notif-mark-all")) markAllNotificationsRead();
+  } else if (target.closest(".notif-read-all")) markAllNotificationsRead();
+  else if (target.closest(".notif-done-all")) markAllNotificationsDone();
   else if (target.closest(".notif-refresh")) loadNotifications({ force: true });
   else if (target.closest(".notif-retry")) loadNotifications({ force: true });
   else if (target.closest(".notif-connect")) {
@@ -625,7 +717,8 @@ if (notificationsButton) {
   });
 }
 
-// Pages are left before a pending Done has waited for its Undo delay: send it now.
+// Pages are left before a pending Done or read has waited for its Undo delay: send it now.
 window.addEventListener("pagehide", () => {
-  for (const entry of pendingDone.values()) commitNotificationDone(entry, true);
+  for (const group of [...doneGroups]) commitDoneGroup(group, true);
+  if (pendingRead) commitAllRead(pendingRead, true);
 });

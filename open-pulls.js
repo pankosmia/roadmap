@@ -218,17 +218,17 @@ function updatePullsBadge() {
 function openPullRowHtml(pull) {
   const state = pullState(pull);
   const linked = pull.issues.length > 0;
-  const issueLinks = linked
-    ? pull.issues
-        .map(
-          (issue) =>
-            `<a class="pulls-issue-chip" href="${escapeHtml(issue.url)}" target="_blank" rel="noopener" title="${escapeHtml(issue.title)}"><md-icon>link</md-icon>${escapeHtml(displayRepo(issue.repo))}#${issue.number}</a>`
-        )
-        .join("")
-    : '<span class="pulls-orphan-chip" title="Not linked to an issue in its Development area"><md-icon>link_off</md-icon>No issue</span>';
-  const alertChip = pull.alert
-    ? `<span class="pulls-alert-chip" title="${escapeHtml(pull.alert.text)}"><md-icon>warning</md-icon>${escapeHtml(pull.alert.text)}</span>`
-    : "";
+  const issueLinks = pull.issues
+    .map(
+      (issue) =>
+        `<a class="pulls-issue-chip" href="${escapeHtml(issue.url)}" target="_blank" rel="noopener" title="${escapeHtml(issue.title)}"><md-icon>link</md-icon>${escapeHtml(displayRepo(issue.repo))}#${issue.number}</a>`
+    )
+    .join("");
+  // The alert and "No issue" chips are only informative: they sit inside the row link, stacked to save width.
+  const flags = [
+    pull.alert ? `<span class="pulls-alert-chip" title="${escapeHtml(pull.alert.text)}"><md-icon>warning</md-icon>${escapeHtml(pull.alert.text)}</span>` : "",
+    linked ? "" : '<span class="pulls-orphan-chip" title="Not linked to an issue in its Development area"><md-icon>link_off</md-icon>No issue</span>'
+  ].join("");
   return `
     <li class="notif-row pulls-row ${linked ? "pulls-linked" : "pulls-orphan"}">
       <a class="notif-open pulls-open" href="${escapeHtml(pull.url)}" target="_blank" rel="noopener">
@@ -237,8 +237,9 @@ function openPullRowHtml(pull) {
           <span class="notif-title">${escapeHtml(pull.title)}</span>
           <span class="notif-meta">${escapeHtml(displayRepo(pull.repo))}#${pull.number} · @${escapeHtml(pull.author)} · ${openPullAgeText(pull.createdAt)}</span>
         </span>
+        ${flags ? `<span class="pulls-flags">${flags}</span>` : ""}
       </a>
-      <span class="pulls-issues">${alertChip}${issueLinks}</span>
+      ${linked ? `<span class="pulls-issues">${issueLinks}</span>` : ""}
     </li>`;
 }
 
