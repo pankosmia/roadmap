@@ -20,6 +20,11 @@ const notice = document.querySelector("#notice");
 const refreshButton = document.querySelector("#refresh-button");
 const authButton = document.querySelector("#auth-button");
 const authStatus = document.querySelector("#auth-status");
+const authMenu = document.querySelector("#auth-menu");
+const overflowButton = document.querySelector("#overflow-button");
+const overflowMenu = document.querySelector("#overflow-menu");
+const overflowRefresh = document.querySelector("#overflow-refresh");
+const overflowAuth = document.querySelector("#overflow-auth");
 const authDialog = document.querySelector("#auth-dialog");
 const authForm = document.querySelector("#auth-form");
 const tokenInput = document.querySelector("#token-input");
@@ -1383,9 +1388,12 @@ function clearTokenField() {
 
 function setAuthState(login) {
   currentLogin = login;
-  authStatus.textContent = login ? `Connected as @${login}` : "Read-only";
-  authStatus.classList.toggle("connected", Boolean(login));
-  authButton.textContent = login ? "Disconnect" : "Connect GitHub";
+  authStatus.hidden = Boolean(login);
+  authButton.textContent = login ? `@${login}` : "Connect GitHub";
+  authButton.title = login ? `Connected as @${login}` : "";
+  authButton.setAttribute("aria-haspopup", login ? "menu" : "dialog");
+  overflowAuth.querySelector("md-icon").textContent = login ? "logout" : "login";
+  overflowAuth.querySelector("[slot=headline]").textContent = login ? `Disconnect @${login}` : "Connect GitHub";
 }
 
 function openAuthDialog() {
@@ -2496,7 +2504,10 @@ if (addButton) addButton.addEventListener("click", () => openNewIssuePanel());
 
 if (document.body.dataset.page === "detail") {
   const title = document.querySelector("#page-title");
-  if (detailVersion) title.textContent = detailVersion;
+  if (detailVersion) {
+    title.textContent = detailVersion === "Backlog" ? "Backlog" : `${detailVersion} version`;
+    document.title = `${title.textContent} — Pankosmia roadmap`;
+  }
   else {
     title.textContent = "Unknown version";
     board.innerHTML = '<div class="empty-state"><md-icon>view_column</md-icon><span>Choose Backlog, Next or Current from the <a href="./">main board</a>.</span></div>';
@@ -2504,7 +2515,14 @@ if (document.body.dataset.page === "detail") {
 }
 
 refreshButton.addEventListener("click", () => loadIssues({ force: true }));
+overflowRefresh.addEventListener("click", () => loadIssues({ force: true }));
+overflowButton.addEventListener("click", () => overflowMenu.open = !overflowMenu.open);
 authButton.addEventListener("click", () => {
+  if (accessToken) authMenu.open = !authMenu.open;
+  else openAuthDialog();
+});
+document.querySelector("#auth-menu-disconnect").addEventListener("click", disconnectToken);
+overflowAuth.addEventListener("click", () => {
   if (accessToken) disconnectToken();
   else openAuthDialog();
 });
@@ -2545,18 +2563,25 @@ async function restoreToken() {
 restoreToken().finally(loadIssues).finally(startLiveSync);
 
 function initThemeToggle() {
-  const options = document.querySelectorAll("[data-theme-option]");
+  const themeButton = document.querySelector("#theme-button");
+  const overflowTheme = document.querySelector("#overflow-theme");
   const sync = () => {
-    const theme = document.documentElement.dataset.theme;
-    for (const option of options) option.setAttribute("aria-pressed", String(option.dataset.themeOption === theme));
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    const label = `Switch to ${next} theme`;
+    themeButton.querySelector("md-icon").textContent = `${next}_mode`;
+    themeButton.setAttribute("aria-label", label);
+    themeButton.title = label;
+    overflowTheme.querySelector("md-icon").textContent = `${next}_mode`;
+    overflowTheme.querySelector("[slot=headline]").textContent = `${next === "dark" ? "Dark" : "Light"} theme`;
   };
-  for (const option of options) {
-    option.addEventListener("click", () => {
-      document.documentElement.dataset.theme = option.dataset.themeOption;
-      try { localStorage.setItem("theme", option.dataset.themeOption); } catch (error) {}
-      sync();
-    });
-  }
+  const toggle = () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("theme", next); } catch (error) {}
+    sync();
+  };
+  themeButton.addEventListener("click", toggle);
+  overflowTheme.addEventListener("click", toggle);
   sync();
 }
 
