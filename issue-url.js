@@ -33,9 +33,35 @@ function urlWithIssue(ref) {
   return `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
 }
 
+// The draft has no address, but it gets a history entry (same URL) so that Back closes it, as it does for an issue,
+// instead of leaving the dashboard. The entry is marked in the history state.
+function markDraftEntry() {
+  if (window.history.state?.draft) return;
+  try {
+    window.history.pushState({ draft: true }, "", window.location.href);
+  } catch {
+    // No history to write to (see syncIssueUrl).
+  }
+}
+
+// The entry stays in the history once the draft is gone; it only loses its mark.
+function clearDraftEntry() {
+  if (!window.history.state?.draft) return;
+  try {
+    window.history.replaceState(null, "", window.location.href);
+  } catch {
+    // No history to write to.
+  }
+}
+
 // Puts the panel's issue in the address bar. The draft has no address: it leaves the URL as it is.
 function syncIssueUrl({ replace = false } = {}) {
-  if (issueUrlPauses > 0 || panelIssueId === DRAFT_ID) return;
+  if (issueUrlPauses > 0) return;
+  if (panelIssueId === DRAFT_ID) {
+    markDraftEntry();
+    return;
+  }
+  clearDraftEntry();
   const issue = panelIssueId === null ? null : currentIssue();
   if (panelIssueId !== null && !issue) return;
   const ref = issue ? issueRef(issue) : null;

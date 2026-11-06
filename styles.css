@@ -1028,6 +1028,13 @@ md-outlined-text-field {
   }
 }
 
+@keyframes panel-full-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -1218,6 +1225,11 @@ md-outlined-text-field {
   margin: 0 0 4px;
   color: var(--md-sys-color-on-surface-variant);
   font: var(--md-type-title-medium);
+}
+
+/* The fold of the Settings only exists on a small screen (see the 700px media query below). */
+.settings-toggle {
+  display: none;
 }
 
 @container (min-width: 940px) {
@@ -2095,12 +2107,107 @@ md-outlined-text-field {
     scroll-snap-align: start;
   }
 
+  /* The issue panel is a full screen dialog; panel-compact.js uses the same breakpoint. */
+  .panel-overlay {
+    display: none;
+  }
+
   .issue-panel {
+    inset: 0;
+    width: 100%;
     border-radius: 0;
+    animation-name: panel-full-in;
+  }
+
+  .panel-resizer {
+    display: none;
+  }
+
+  /* Scrolling past the top would otherwise pull the page to refresh and lose the edits. */
+  .panel-content {
+    overscroll-behavior-y: contain;
   }
 
   .panel-main {
     padding-inline: 16px;
+  }
+
+  /* Settings: a strip under the title with the assignees and the flow, which opens the whole settings in place. */
+  .panel-settings {
+    margin: 0;
+    padding: 0;
+  }
+
+  .panel-settings-heading {
+    display: none;
+  }
+
+  .settings-toggle {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 8px;
+    width: 100%;
+    min-height: 48px;
+    padding: 12px 16px;
+    border: 0;
+    border-radius: var(--md-sys-shape-lg);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .settings-toggle-title {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-type-title-medium);
+  }
+
+  .settings-toggle > md-icon {
+    grid-column: 2;
+    grid-row: 1;
+    color: var(--md-sys-color-on-surface-variant);
+    transition: transform .2s;
+  }
+
+  .settings-toggle[aria-expanded="true"] > md-icon {
+    transform: rotate(180deg);
+  }
+
+  .settings-summary {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 16px;
+    font: var(--md-type-body-medium);
+  }
+
+  .settings-toggle[aria-expanded="true"] .settings-summary {
+    display: none;
+  }
+
+  .summary-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .summary-label,
+  .summary-empty,
+  .summary-more {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .panel-settings:not(.is-open) .panel-controls {
+    display: none;
+  }
+
+  .panel-controls {
+    padding: 0 16px 16px;
   }
 }
 

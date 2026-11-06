@@ -1781,7 +1781,13 @@ function ensurePanel() {
       </div>
       <aside class="panel-settings" aria-labelledby="panel-settings-heading">
         <h2 class="panel-settings-heading" id="panel-settings-heading">Settings</h2>
-        <fieldset class="panel-controls"></fieldset>
+        <button type="button" class="settings-toggle" aria-expanded="false" aria-controls="panel-settings-body">
+          <md-ripple></md-ripple><md-focus-ring></md-focus-ring>
+          <span class="settings-toggle-title">Settings</span>
+          <span class="settings-summary"></span>
+          <md-icon>expand_more</md-icon>
+        </button>
+        <fieldset class="panel-controls" id="panel-settings-body"></fieldset>
       </aside>
     </div>
     <md-fab class="panel-top" size="small" variant="secondary" aria-label="Back to top" title="Back to top" hidden><md-icon slot="icon">arrow_upward</md-icon></md-fab>
@@ -1828,7 +1834,10 @@ function ensurePanel() {
     reviewButton: panel.querySelector(".review-button"),
     closeSplit: panel.querySelector(".close-split"),
     reopenButton: panel.querySelector(".reopen-button"),
-    controls: panel.querySelector(".panel-controls")
+    controls: panel.querySelector(".panel-controls"),
+    settings: panel.querySelector(".panel-settings"),
+    settingsToggle: panel.querySelector(".settings-toggle"),
+    settingsSummary: panel.querySelector(".settings-summary")
   };
   overlay.addEventListener("click", requestClosePanel);
   panel.querySelector(".panel-close").addEventListener("click", requestClosePanel);
@@ -1843,6 +1852,7 @@ function ensurePanel() {
   setupPanelScroll(panel);
   setupCloseControls(panel);
   setupPanelResizer(panel, panelElements.resizer);
+  setupCompactPanel();
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && panelIssueId !== null && !tabsMenu?.open && !document.querySelector("md-dialog[open]")) requestClosePanel();
   });
@@ -1909,7 +1919,8 @@ function setupPanelResizer(panel, resizer) {
     setPanelWidth(panel, resizer, widths[event.key], true);
   });
   window.addEventListener("resize", () => {
-    if (!panel.hidden) setPanelWidth(panel, resizer, panel.getBoundingClientRect().width, false);
+    // A full screen panel is as wide as the window: that width must not replace the one of the side panel.
+    if (!panel.hidden && !isCompactPanel()) setPanelWidth(panel, resizer, panel.getBoundingClientRect().width, false);
   });
 }
 
@@ -1939,7 +1950,8 @@ function openPanel(issue) {
   }
   startPanelTabs(issue);
   showPanelIssue(issue, null);
-  panelElements.title.focus();
+  // On a phone, focusing the title would open the keyboard over the whole screen.
+  if (issue.draft || !isCompactPanel()) panelElements.title.focus();
 }
 
 // Fills the panel with one issue. `saved` is the state kept by its tab when the user comes back to it.
@@ -1961,8 +1973,10 @@ function showPanelIssue(issue, saved) {
   descriptionEditor.value = issue.body || "";
   elements.error.hidden = true;
   if (saved) restorePanelState(issue, saved);
+  resetSettingsOpen(issue);
   elements.overlay.hidden = false;
   elements.panel.hidden = false;
+  syncCompactPanel();
   refreshPanel();
   if (saved) finishPanelRestore(saved);
   else resetPanelScroll();
@@ -2083,6 +2097,7 @@ function closePanel() {
   endPanelTabs();
   panelElements.overlay.hidden = true;
   panelElements.panel.hidden = true;
+  syncCompactPanel();
   syncIssueUrl();
 }
 
@@ -2144,7 +2159,10 @@ function validateDraft(draft, title) {
   showPanelError("Complete the highlighted fields before creating the issue.");
   panelElements.error.dataset.validation = "true";
   if (!title) panelElements.title.focus();
-  else panelElements.controls.querySelector(".has-error .connected-button")?.focus();
+  else {
+    revealSettings();
+    panelElements.controls.querySelector(".has-error .connected-button")?.focus();
+  }
   return false;
 }
 
@@ -2519,6 +2537,7 @@ function renderPanelControls() {
     ${developmentSectionHtml(issue)}
     ${relationshipsSectionHtml(issue, disabled)}
   `;
+  renderSettingsSummary(issue);
   bindPanelControls(issue);
   if (picker) {
     positionPicker();
