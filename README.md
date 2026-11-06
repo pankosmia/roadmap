@@ -29,7 +29,7 @@ GitHub). Once connected, the panel lets you:
   on one row that wraps to a second line when narrow; changing Version moves
   the card, and Flow defaults to `Flow : No Spec` when leaving Unassigned
   without one);
-- toggle the Epic and WIP meta labels, and pick Type (exclusive: Feature, Bug,
+- toggle the Epic meta label, and pick Type (exclusive: Feature, Bug,
   Tech Debt), Stack (multiple choices: Client, Server, Data, Build,
   Documentation) and Priority (optional, Tweak / Urgent / Security, click
   again to clear) in single-row connected button groups;
@@ -197,7 +197,8 @@ button (main and version pages) creates an issue (default repository: `roadmap`)
 Unassigned and opens it in the side panel. Cards show their labels in their
 GitHub colors, without the text before the ":" (for example "Spec'd" for
 "Flow : Spec'd"). Chips follow a fixed order: Type, Stack, Priority, then the other
-labels (alphabetical). `Meta` labels (Epic, WIP) appear at the top right of the card,
+labels (alphabetical). `Meta` labels (Epic) appear at the top right of the card
+(the retired `Meta : WIP` label is never shown),
 and a `Blocked : …` label is shown as a red stop icon before the title (its reason is in
 the tooltip). Cards are moved by dragging them between columns. Repository names are shown without the `pankosmia/` prefix. Below a divider,
 a card shows the last update time as on GitHub ("Updated 3 days ago", then an
