@@ -175,7 +175,14 @@ after `?version=…`). Opening the link opens that issue in the panel once the b
 a closed or archived one (it is fetched from GitHub); an unknown issue shows a notice. Opening or
 switching to an issue adds a browser history entry, so Back returns to the previous issue and then
 closes the panel (an unsaved tab still asks first). The "New issue" tab has no address: the URL
-stays as it was.
+stays as it was, but it adds a history entry too, so Back closes it instead of leaving the page.
+
+**Small screens** (`panel-compact.js`, width up to 700px): the panel is a full screen dialog.
+There is no backdrop and no resize handle, the board behind it is inert, and scrolling past
+the top does not refresh the page. The Settings fold into a strip under the title that shows
+the assignees and the flow and opens the whole Settings in place (open for a new issue,
+folded for an existing one, every time it is shown, tab switches included). Opening an issue does not focus
+its title, so the keyboard stays down; a new issue still does.
 
 Menus open and close without animation.
 
