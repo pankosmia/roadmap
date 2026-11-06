@@ -589,7 +589,11 @@ function createIssueCard(issue) {
   const number = issue.number;
   // Version and Flow are the columns; Meta goes top-right and Blocked is an icon before the status icon.
   const shown = issue.labels.filter(
-    (label) => !isVersionLabel(label.name) && !hasPrefix(label.name, "Blocked") && !(detailVersion && isFlowLabel(label.name))
+    (label) =>
+      !isVersionLabel(label.name) &&
+      !hasPrefix(label.name, "Blocked") &&
+      !isRetiredLabel(label.name) &&
+      !(detailVersion && isFlowLabel(label.name))
   );
   const metaChips = shown.filter((label) => hasPrefix(label.name, "Meta")).map(labelChipHtml).join("");
   const labels = sortCardLabels(shown.filter((label) => !hasPrefix(label.name, "Meta")))
@@ -1568,7 +1572,13 @@ function buttonText(prefix, value) {
   return SHORT_BUTTON_TEXT[prefix]?.[value] || value;
 }
 
-const META_LABELS = ["Epic", "WIP"];
+const META_LABELS = ["Epic"];
+// Labels that are no longer used but may remain on older issues; cards do not show them.
+const RETIRED_LABELS = ["Meta : WIP"];
+
+function isRetiredLabel(labelName) {
+  return RETIRED_LABELS.some((retired) => retired.toLowerCase() === labelName.trim().toLowerCase());
+}
 // Button group order; labels that are not listed come last, in GitHub's order.
 const GROUP_ORDER = {
   Type: ["Feature", "Bug", "Tech Debt"],
