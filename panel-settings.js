@@ -178,6 +178,50 @@ function showBlockedChange() {
   if (current && !current.draft) renderStatusControls(current);
 }
 
+// The blockers are what the relationships of an issue say on GitHub: the search results only tell which issues to ask about,
+// as their summary can be late. { ids, blocked }: `blocked` adds every open issue that has blockers.
+const BLOCKER_CHECK_MAX = 20;
+let blockerRefreshTimer = 0;
+
+async function refreshBlockers({ ids, blocked }) {
+  if (!accessToken) return;
+  const wanted = new Set(ids);
+  if (blocked) issues.filter((issue) => !isClosed(issue) && totalBlockers(issue) > 0).forEach((issue) => wanted.add(issue.id));
+  const targets = issues.filter((issue) => wanted.has(issue.id) && !issue.draft).slice(0, BLOCKER_CHECK_MAX);
+  if (targets.length === 0) return;
+  const epoch = relationEpoch;
+  const results = await Promise.all(
+    targets.map(async (issue) => {
+      try {
+        return { id: issue.id, items: await fetchAllPages(`${issueApiUrl(repoOf(issue).join("/"), issue.number)}/dependencies/blocked_by`) };
+      } catch {
+        return null;
+      }
+    })
+  );
+  // A relationship changed in the panel meanwhile: what was read may be older than it, and the next check sees it.
+  if (epoch !== relationEpoch || relationJobs > 0) return;
+  let changed = false;
+  for (const result of results) {
+    if (!result) continue;
+    const open = result.items.filter((item) => item.state === "open").length;
+    if (setBlockerCounts(result.id, open, result.items.length)) changed = true;
+  }
+  if (!changed) return;
+  saveIssuesCache();
+  showBlockedWhenIdle();
+}
+
+// The board is not rebuilt under a field that is being typed in.
+function showBlockedWhenIdle() {
+  clearTimeout(blockerRefreshTimer);
+  if (syncBusy()) {
+    blockerRefreshTimer = setTimeout(showBlockedWhenIdle, SYNC_RENDER_RETRY);
+    return;
+  }
+  showBlockedChange();
+}
+
 function withRelation(relations, kind, item, adding) {
   const next = { ...relations };
   if (kind === "parent") {
@@ -266,6 +310,7 @@ async function changeRelation(issue, kind, item, adding) {
     return;
   }
   panelElements.error.hidden = true;
+  relationEpoch += 1;
   panelExtras.relations = withRelation(panelExtras.relations, kind, item, adding);
   if (syncBlockedCounts(issue, kind, item, adding)) showBlockedChange();
   renderPanelControls();
@@ -276,6 +321,8 @@ async function changeRelation(issue, kind, item, adding) {
 // After a failure, the relationships are reloaded once the queue is empty.
 let relationQueue = Promise.resolve();
 let relationJobs = 0;
+// Counts the relationship changes made here, so that a read that started before one is not applied after it.
+let relationEpoch = 0;
 let relationReload = null;
 
 function queueRelationJob(issue, kind, item, adding, key) {

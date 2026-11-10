@@ -1262,8 +1262,9 @@ md-outlined-text-field {
     overflow-y: auto;
   }
 
+  /* The editor is as tall as its text area (see fitHeight), and takes the free room when the text is short. */
   .panel-main .md-editor {
-    flex: 1 0 280px;
+    flex: 1 0 auto;
   }
 
   .panel-settings {
