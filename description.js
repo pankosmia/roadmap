@@ -183,8 +183,15 @@ function bindTaskCheckboxes(container, view) {
 
 function renderDescriptionBody(view) {
   const { descBody } = panelElements;
-  const shown = `${view.status}|${view.error}|${view.html}`;
-  if (view.shown !== shown) {
+  const shown = `${view.status}|${view.error}|${withoutImageTokens(view.html)}`;
+  if (view.shown === shown) {
+    // Same text: keep the elements and only renew the image tokens that GitHub signed again.
+    if (view.tokenSource !== view.html && descriptionBodyOwner === view) {
+      const template = document.createElement("template");
+      template.innerHTML = view.html;
+      refreshImageTokens(descBody, template.content);
+    }
+  } else {
     view.shown = shown;
     // Loading the description again must not throw the reader back to the top of a long text.
     const scrollTop = descriptionBodyOwner === view ? descBody.scrollTop : 0;
@@ -206,6 +213,7 @@ function renderDescriptionBody(view) {
     descBody.scrollTop = scrollTop;
     observeDescriptionSize();
   }
+  view.tokenSource = view.html;
   bindTaskCheckboxes(descBody, view);
   updateDescriptionOverflow();
 }
@@ -322,7 +330,7 @@ async function copyIssueLink() {
   if (!issue || issue.draft) return;
   try {
     await navigator.clipboard.writeText(issue.html_url);
-    showNotice("Issue link copied.");
+    showSnackbar("Issue link copied.");
   } catch {
     showNotice("Could not copy the link. Your browser blocked access to the clipboard.", true);
   }
@@ -340,9 +348,12 @@ function refreshOpenPanel() {
 }
 
 function renderDescription(issue) {
-  const { heading, descCard, descMeta, descEdit, descToggle, title: titleInput, cancel, save } = panelElements;
+  const { pinned, statusSlot, statusRow, heading, descCard, descMeta, descEdit, descToggle, title: titleInput, cancel, save } = panelElements;
   const editing = issue.draft || descriptionMode === "edit";
-  heading.hidden = editing;
+  // Reading, the status and the title stay above the scrolling column. Editing, they go back in the column with the title field.
+  const host = editing ? statusSlot : pinned;
+  if (statusRow.parentElement !== host) host.prepend(statusRow);
+  pinned.hidden = editing;
   descCard.hidden = editing;
   titleInput.hidden = !editing;
   descriptionEditor.element.hidden = !editing;
@@ -350,6 +361,7 @@ function renderDescription(issue) {
   save.hidden = !editing;
   if (editing) return;
   heading.textContent = issue.title;
+  heading.title = issue.title;
   const edited = descriptionIsEdited(issue);
   const editedBy = descriptionView.editor ? ` by ${descriptionView.editor}` : "";
   const editedAt = descriptionView.editedAt ? ` on ${new Date(descriptionView.editedAt).toLocaleString()}` : "";

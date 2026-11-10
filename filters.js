@@ -59,8 +59,9 @@ function filtersDiffer() {
   return !sameList(assignees, base.assignees) || !sameList(repos, base.repos) || blocked !== base.blocked;
 }
 
+// Blocked by a label, or by an issue that is still open (see openBlockerCount).
 function isBlocked(issue) {
-  return issue.labels.some((label) => hasPrefix(label.name, "Blocked"));
+  return issue.labels.some((label) => hasPrefix(label.name, "Blocked")) || openBlockerCount(issue) > 0;
 }
 
 function matchesFilters(issue) {

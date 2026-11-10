@@ -39,7 +39,12 @@ GitHub). Once connected, the panel lets you:
   then open, draft, closed) with the number of linked pull requests; clicking it
   lists each pull request with its own icon and a link (needs a connected token);
 - manage Parent, Sub-issues, Blocked by and Blocking relationships, searching
-  issues across the whole organization, from the Relationships heading.
+  issues across the whole organization, from the Relationships heading. Open
+  blockers are shown in red (the "Blocked by" heading and the blocker rows);
+- keep the status chip and the issue title pinned above the scrolling panel
+  (not while editing); issue links (`#123`, issue URLs) in the description,
+  comments and the editor Preview open in a panel tab, other links open in a
+  new browser tab.
 
 Open issues of Next and Current that are not yet in the Reviewing or Done flows get a
 **Review** button in the panel (left of Close, under the description and below the
@@ -145,13 +150,14 @@ an "edited" marker (needs a token, from GraphQL `lastEditedAt`) and the Markdown
 by GitHub. Task-list checkboxes can be ticked: the board re-reads the description, checks
 nobody changed it, then saves at once (and restores the box with an error if GitHub
 refuses). A box is disabled when the Markdown and the rendered HTML do not line up, or
-without a token. The pencil button switches the title and description to the editors
+without a token. The Markdown editors (description and comments) grow with their text, from 220 px (160 px in the timeline) up to 70% of the window height, then scroll inside; the Preview tab keeps the same height. When the description or a comment is read again and its text is unchanged, it is not redrawn (GitHub signs the image links anew on every request, which used to reload the images and make the text blink); only the links are renewed. The pencil button switches the title and description to the editors
 (**Save** / **Cancel**; Cancel asks before discarding changes). A new issue still opens
 in edit mode. The rendered body is kept out of the board's issue cache.
 When the description is taller than its box, a fade at the bottom and an **Expand
 description** / **Collapse description** button appear. The chevron in the card header
-collapses the whole description, **Copy link** copies the issue URL, and with a token the
-description has the same reactions as a comment. Wide tables scroll sideways and code
+collapses the whole description, **Copy link** copies the issue URL (a snackbar confirms it, like
+for comment links), and with a token the
+description has the same reactions as a comment. Lists (including task lists, ordered and nested) keep a hanging indent: a wrapped line stays under the item's text. Wide tables scroll sideways and code
 blocks have a **Copy** button. A round **Back to top** button appears at the bottom left after scrolling down.
 The description and the timeline are re-read when the tab regains focus and every 4
 minutes (private image links expire after about 5 minutes); the reading position and
@@ -199,8 +205,10 @@ GitHub colors, without the text before the ":" (for example "Spec'd" for
 "Flow : Spec'd"). Chips follow a fixed order: Type, Stack, Priority, then the other
 labels (alphabetical). `Meta` labels (Epic) appear at the top right of the card
 (the retired `Meta : WIP` label is never shown),
-and a `Blocked : …` label is shown as a red stop icon before the title (its reason is in
-the tooltip). Cards are moved by dragging them between columns. Repository names are shown without the `pankosmia/` prefix. Below a divider,
+and a `Blocked : …` label, or an open "Blocked by" relationship, is shown as a red stop
+icon overlapping the status icon, on cards and on sub-issue rows (the reason or the number of
+open blockers is in the tooltip; the
+Blocked filter includes both). Cards are moved by dragging them between columns. Repository names are shown without the `pankosmia/` prefix. Below a divider,
 a card shows the last update time as on GitHub ("Updated 3 days ago", then an
 absolute date after 30 days) on the left, and on the right (from right to left) its
 assignees, its comment count (hidden when 0) and the linked pull request icon. Columns on every page are sorted by last update, most

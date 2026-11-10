@@ -101,6 +101,7 @@ async function loadRelations(issue, key) {
     if (panelExtras.key !== key) return;
     panelExtras.relations = { parent: parentIssue, subIssues, blockedBy, blocking };
     panelExtras.relationsStatus = "ready";
+    if (syncOwnBlockers(issue)) showBlockedChange();
   } catch (error) {
     if (panelExtras.key !== key) return;
     panelExtras.relationsStatus = "error";
@@ -137,6 +138,44 @@ async function loadDevelopment(issue, key) {
     panelExtras.developmentError = apiErrorMessage(error);
   }
   renderPanelControls();
+}
+
+// The cards and the filter read the open blockers of an issue in GitHub's issue_dependencies_summary. What the panel
+// learns about the relationships (loaded, or changed here) is written there, so that the board follows at once.
+function setBlockerCounts(issueId, open, total) {
+  const index = issues.findIndex((item) => item.id === issueId);
+  if (index === -1) return false;
+  const summary = issues[index].issue_dependencies_summary || {};
+  if ((summary.blocked_by || 0) === open && (summary.total_blocked_by || 0) === total) return false;
+  issues[index] = { ...issues[index], issue_dependencies_summary: { ...summary, blocked_by: open, total_blocked_by: total } };
+  return true;
+}
+
+function syncOwnBlockers(issue) {
+  const { blockedBy } = panelExtras.relations;
+  return setBlockerCounts(issue.id, blockedBy.filter((item) => item.state === "open").length, blockedBy.length);
+}
+
+// Adding or removing a blocker of this issue changes the count of the issue it blocks.
+function syncBlockedIssue(issue, item, adding) {
+  const other = issues.find((candidate) => candidate.id === item.id);
+  if (!other) return false;
+  const summary = other.issue_dependencies_summary || {};
+  const step = adding ? 1 : -1;
+  const open = (summary.blocked_by || 0) + (isClosed(issue) ? 0 : step);
+  return setBlockerCounts(other.id, Math.max(0, open), Math.max(0, (summary.total_blocked_by || 0) + step));
+}
+
+function syncBlockedCounts(issue, kind, item, adding) {
+  if (kind === "blockedBy") return syncOwnBlockers(issue);
+  if (kind === "blocking") return syncBlockedIssue(issue, item, adding);
+  return false;
+}
+
+function showBlockedChange() {
+  renderBoard();
+  const current = currentIssue();
+  if (current && !current.draft) renderStatusControls(current);
 }
 
 function withRelation(relations, kind, item, adding) {
@@ -228,6 +267,7 @@ async function changeRelation(issue, kind, item, adding) {
   }
   panelElements.error.hidden = true;
   panelExtras.relations = withRelation(panelExtras.relations, kind, item, adding);
+  if (syncBlockedCounts(issue, kind, item, adding)) showBlockedChange();
   renderPanelControls();
   queueRelationJob(issue, kind, item, adding, panelExtras.key);
 }
@@ -245,6 +285,8 @@ function queueRelationJob(issue, kind, item, adding, key) {
       await applyRelation(issue, kind, item, adding);
       clearIssuesCache();
     } catch (error) {
+      // The blockers of this issue are read again below; the count of the blocked issue is put back here.
+      if (kind === "blocking" && syncBlockedIssue(issue, item, !adding)) showBlockedChange();
       const message = `Could not update the relationships of ${repoOf(issue)[1]}#${issue.number}: ${apiErrorMessage(error)}`;
       relationReload = { issue, key };
       if (panelExtras.key === key) showPanelError(message);
@@ -325,9 +367,14 @@ function developmentSectionHtml(issue) {
   return sectionHtml("Development", null, body);
 }
 
+// Only an open blocker blocks: it is shown in red.
+function isOpenBlocker(kind, item) {
+  return kind === "blockedBy" && item.state === "open";
+}
+
 function relationRowHtml(kind, item, disabled) {
   return `
-    <li class="relation-row">
+    <li class="relation-row${isOpenBlocker(kind, item) ? " is-open-blocker" : ""}">
       ${statusIconHtml(item)}
       <a class="relation-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener" data-issue-id="${item.id}" data-repo="${escapeHtml(item.repo)}" data-number="${item.number}"><span class="relation-title">${escapeHtml(item.title)}</span>
         <span class="relation-ref">${escapeHtml(displayRepo(item.repo))}#${item.number}</span></a>
@@ -345,7 +392,8 @@ function relationshipsSectionHtml(issue, disabled) {
     body = RELATION_KINDS.map(({ key, title }) => {
       const items = key === "parent" ? (relations.parent ? [relations.parent] : []) : relations[key];
       if (items.length === 0) return "";
-      return `<div class="relation-group"><h4>${title}</h4><ul class="relation-list">${items.map((item) => relationRowHtml(key, item, disabled)).join("")}</ul></div>`;
+      const blocked = items.some((item) => isOpenBlocker(key, item));
+      return `<div class="relation-group${blocked ? " is-blocked" : ""}"><h4>${title}</h4><ul class="relation-list">${items.map((item) => relationRowHtml(key, item, disabled)).join("")}</ul></div>`;
     }).join("");
   }
   const locked = relationsStatus === "loading" || relationsStatus === "error" ? "disabled" : disabled;

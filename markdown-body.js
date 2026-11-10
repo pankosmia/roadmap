@@ -3,6 +3,28 @@
 
 const CODE_COPY_FEEDBACK_MS = 1500;
 
+// GitHub signs the URLs of private images anew on each request (?jwt=…, valid for 5 minutes), so two reads of the same
+// text never match. Comparing the HTML without the tokens tells whether the text really changed.
+function withoutImageTokens(html) {
+  return html.replace(/jwt=[^"&\s<>]*/g, "jwt=");
+}
+
+// The text did not change, so the page keeps its elements (re-rendering them would reload every image and make it blink).
+// Only the tokens are renewed: in the links, and in the images that have not loaded yet and would otherwise use an expired one.
+function refreshImageTokens(shown, fresh) {
+  const signed = "[src*='jwt='], [href*='jwt=']";
+  const oldElements = [...shown.querySelectorAll(signed)];
+  const newElements = [...fresh.querySelectorAll(signed)];
+  if (oldElements.length !== newElements.length) return;
+  oldElements.forEach((element, index) => {
+    const attribute = element.hasAttribute("src") ? "src" : "href";
+    const value = newElements[index].getAttribute(attribute);
+    if (!value || value === element.getAttribute(attribute)) return;
+    if (attribute === "src" && element.complete && element.naturalWidth > 0) return;
+    element.setAttribute(attribute, value);
+  });
+}
+
 // GitHub wraps some tables in its own <markdown-accessiblity-table> element; the scroller goes around it.
 function tableWrapTarget(table) {
   const parent = table.parentElement;

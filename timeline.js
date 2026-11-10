@@ -587,9 +587,12 @@ function patchTimelineList(list, html) {
   template.innerHTML = html;
   const current = new Map([...list.children].map((row) => [row.dataset.key, row]));
   const next = [...template.content.children].map((fresh) => {
-    const source = fresh.outerHTML;
+    const source = withoutImageTokens(fresh.outerHTML);
     const kept = current.get(fresh.dataset.key);
-    if (kept && kept.rowSource === source) return kept;
+    if (kept && kept.rowSource === source) {
+      refreshImageTokens(kept, fresh);
+      return kept;
+    }
     fresh.rowSource = source;
     fresh.querySelectorAll(".tl-comment-body a[href]").forEach((link) => {
       link.target = "_blank";
@@ -1105,7 +1108,7 @@ async function copyCommentLink(timeline, id) {
   if (!comment) return;
   try {
     await navigator.clipboard.writeText(comment.html_url);
-    showNotice("Comment link copied.");
+    showSnackbar("Comment link copied.");
   } catch {
     showNotice("Could not copy the link. Your browser blocked access to the clipboard.", true);
   }

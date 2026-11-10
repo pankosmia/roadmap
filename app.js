@@ -43,6 +43,8 @@ let loadFailed = false;
 let isLoading = false;
 let searchTerm = "";
 let undoTimer = 0;
+let infoTimer = 0;
+const INFO_SNACKBAR_MS = 4000;
 const COLLAPSED_KEY = `roadmap-collapsed-${detailVersion || "main"}`;
 const collapsedColumns = new Set(loadCollapsedColumns());
 
@@ -602,7 +604,7 @@ function createIssueCard(issue) {
 
   card.innerHTML = `
     <div class="issue-meta">
-      ${blockedIconHtml(issue)}${statusIconHtml(issue)}
+      ${stateIconsHtml(issue)}
       <span class="repo-name" title="${escapeHtml(repository)}">${escapeHtml(repository)}</span>
       <span class="issue-number">#${number}</span>
       ${metaChips ? `<span class="issue-meta-labels" aria-label="Issue markers">${metaChips}</span>` : ""}
@@ -785,9 +787,11 @@ async function moveIssue(issue, version, { restoreParent = null, subIssues = nul
 
 function showUndo(message, undo) {
   clearTimeout(undoTimer);
-  document.querySelector(".snackbar")?.remove();
+  document.querySelector(".undo-snackbar")?.remove();
+  // The Undo is the one that matters: it takes the place of a passing confirmation.
+  document.querySelector(".info-snackbar")?.remove();
   const toast = document.createElement("div");
-  toast.className = "snackbar";
+  toast.className = "snackbar undo-snackbar";
   toast.setAttribute("role", "status");
   const text = document.createElement("span");
   text.textContent = message;
@@ -800,6 +804,20 @@ function showUndo(message, undo) {
   toast.append(text, button);
   document.body.append(toast);
   undoTimer = setTimeout(() => toast.remove(), 8000);
+}
+
+// A confirmation that is not an error (a link was copied…). It goes away by itself and does not replace an Undo snackbar.
+function showSnackbar(message) {
+  clearTimeout(infoTimer);
+  document.querySelector(".info-snackbar")?.remove();
+  const toast = document.createElement("div");
+  toast.className = "snackbar info-snackbar";
+  toast.setAttribute("role", "status");
+  toast.textContent = message;
+  // Sits above the Undo snackbar when both are shown.
+  toast.classList.toggle("is-raised", Boolean(document.querySelector(".undo-snackbar")));
+  document.body.append(toast);
+  infoTimer = setTimeout(() => toast.remove(), INFO_SNACKBAR_MS);
 }
 
 // The optional action adds a button to the notice: { label, onClick }.
@@ -1649,11 +1667,27 @@ function sortCardLabels(labels) {
   });
 }
 
+// GitHub counts the open issues that block this one (closed blockers no longer block).
+function openBlockerCount(issue) {
+  return issue.issue_dependencies_summary?.blocked_by || 0;
+}
+
+// The icons of cards and sub-issue rows: the stop icon overlaps the status icon, as the assignees' pictures overlap.
+function stateIconsHtml(issue) {
+  return `<span class="state-icons">${statusIconHtml(issue)}${blockedIconHtml(issue)}</span>`;
+}
+
 function blockedIconHtml(issue) {
   const blocked = issue.labels.filter((label) => hasPrefix(label.name, "Blocked"));
-  if (blocked.length === 0) return "";
-  const reason = blocked.map((label) => labelValue(label.name)).join(", ");
-  const text = reason.toLowerCase() === "blocked" ? "Blocked" : `Blocked: ${reason}`;
+  const blockers = openBlockerCount(issue);
+  if (blocked.length === 0 && blockers === 0) return "";
+  const reasons = [];
+  if (blocked.length > 0) {
+    const reason = blocked.map((label) => labelValue(label.name)).join(", ");
+    reasons.push(reason.toLowerCase() === "blocked" ? "Blocked" : `Blocked: ${reason}`);
+  }
+  if (blockers > 0) reasons.push(`Blocked by ${blockers} open ${blockers === 1 ? "issue" : "issues"}`);
+  const text = reasons.join(". ");
   return `<md-icon class="blocked-icon" role="img" title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}">stop_circle</md-icon>`;
 }
 
@@ -1741,6 +1775,9 @@ function ensurePanel() {
       <md-icon-button class="panel-tabs-all" aria-label="All open issues" aria-haspopup="menu" aria-expanded="false" hidden><md-icon>arrow_drop_down</md-icon></md-icon-button>
       <md-text-button class="panel-github-link" target="_blank" title="View on GitHub"><span class="panel-github-label">View on GitHub</span><md-icon slot="icon">open_in_new</md-icon></md-text-button>
     </header>
+    <div class="panel-pinned" hidden>
+      <h2 class="panel-title-heading"></h2>
+    </div>
     <div class="panel-content">
       <div class="panel-main">
         <p class="panel-error auth-error" role="alert" hidden></p>
@@ -1751,11 +1788,12 @@ function ensurePanel() {
           <span class="repo-field-value"></span>
           <md-icon>arrow_drop_down</md-icon>
         </button>
-        <div class="status-row" hidden>
-          <span class="panel-blocked" hidden></span>
-          <div class="status-pill"></div>
+        <div class="status-slot">
+          <div class="status-row" hidden>
+            <span class="panel-blocked" hidden></span>
+            <div class="status-pill"></div>
+          </div>
         </div>
-        <h2 class="panel-title-heading" hidden></h2>
         <md-outlined-text-field class="panel-title-input" label="Title" type="text" autocomplete="off"></md-outlined-text-field>
         <section class="desc-card tl-card" aria-label="Description" hidden>
           <header class="tl-card-header">
@@ -1822,6 +1860,8 @@ function ensurePanel() {
     error: panel.querySelector(".panel-error"),
     readonly: panel.querySelector(".panel-readonly"),
     title: panel.querySelector(".panel-title-input"),
+    pinned: panel.querySelector(".panel-pinned"),
+    statusSlot: panel.querySelector(".status-slot"),
     heading: panel.querySelector(".panel-title-heading"),
     descCard: panel.querySelector(".desc-card"),
     descMeta: panel.querySelector(".desc-meta"),
@@ -2480,7 +2520,7 @@ function renderPanelControls() {
     const shown = options.find(({ value }) => value === current)?.text || emptyText;
     return `
     <div class="control">
-      <span class="control-label">${label}${warning}</span>
+      <span class="control-label${alert && current ? " is-alert" : ""}">${label}${warning}</span>
       ${options.length === 0 ? '<p class="empty-note">No labels in this repo.</p>' : `
       <div class="menu-chip">
         <md-assist-chip id="chip-${id}" class="menu-chip-button${alert && current ? " is-alert" : ""}" aria-label="${label}: ${escapeHtml(shown)}" aria-haspopup="menu" data-menu="${id}" ${disabled}>

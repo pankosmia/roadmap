@@ -74,6 +74,16 @@ function caretPoint(textarea, index) {
   return point;
 }
 
+// Scroll positions of the areas around `element`; the textarea shrinks for a moment when it is measured, which would
+// otherwise throw them back up.
+function scrollPositions(element) {
+  const positions = [];
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    if (node.scrollTop > 0) positions.push([node, node.scrollTop]);
+  }
+  return positions;
+}
+
 // `mentions` is optional and turns on GitHub-style "@" suggestions: { local(query), remote(query) }.
 // local returns the people known at once, remote a promise of more (or null).
 // `uploadImage` is optional and turns on image upload (paste, drop, toolbar button): file => promise of { url, alt, width, height }.
@@ -112,12 +122,27 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mention
   const mention = { open: false, start: 0, query: "", local: [], remote: [], items: [], active: 0, timer: 0, request: 0 };
   let mentionList = null;
 
+  // The textarea is as tall as its text; the CSS minimum and maximum (and the textarea's own scrolling) do the rest.
+  function fitHeight() {
+    if (input.hidden || input.clientWidth === 0) return;
+    const positions = scrollPositions(input);
+    // Without this the textarea would be measured at the height it was stretched to, and never shrink.
+    input.style.flex = "none";
+    input.style.height = "auto";
+    input.style.height = `${input.scrollHeight}px`;
+    input.style.flex = "";
+    for (const [node, top] of positions) node.scrollTop = top;
+  }
+
   function replaceRange(start, end, text, selectionStart, selectionEnd) {
     input.focus();
     input.setSelectionRange(start, end);
     // execCommand keeps the browser's native undo stack; setRangeText is the fallback.
     const done = text === "" ? document.execCommand("delete") : document.execCommand("insertText", false, text);
-    if (!done) input.setRangeText(text, start, end, "end");
+    if (!done) {
+      input.setRangeText(text, start, end, "end");
+      fitHeight();
+    }
     input.setSelectionRange(selectionStart, selectionEnd);
   }
 
@@ -546,6 +571,8 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mention
   function setPreviewing(value) {
     previewing = value;
     closeMentions();
+    // The Preview is as tall as the text area it replaces, so that switching tabs does not move the page.
+    if (value && input.offsetHeight > 0) preview.style.minHeight = `${input.offsetHeight}px`;
     input.hidden = value;
     preview.hidden = !value;
     toolbar.classList.toggle("is-hidden", value);
@@ -555,9 +582,17 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mention
   }
 
   input.addEventListener("input", () => {
+    fitHeight();
     updateMentions();
     onInput?.();
   });
+  // The width changes the line wrapping, and a textarea that was hidden (closed panel, Preview tab) has no size yet.
+  let fittedWidth = 0;
+  new ResizeObserver(() => {
+    if (input.clientWidth === fittedWidth) return;
+    fittedWidth = input.clientWidth;
+    fitHeight();
+  }).observe(input);
   if (mentions) {
     input.addEventListener("click", updateMentions);
     input.addEventListener("keyup", (event) => {
@@ -581,6 +616,7 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mention
     },
     set value(text) {
       input.value = text;
+      fitHeight();
       if (pendingUploads === 0) showStatus("");
       if (previewing) showPreview();
       onInput?.();
