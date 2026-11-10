@@ -10,6 +10,8 @@ let renderedTabs = "";
 let scrolledToTab = null;
 let tabsMenu = null;
 const tabsOpening = new Set();
+// Links that may name an issue: the rendered texts (description, comments, editor preview) and the references of the timeline.
+const ISSUE_LINK_SELECTOR = ".desc-body a, .tl-comment-body a, .md-editor-preview a, a.tl-ref";
 
 function startPanelTabs(issue) {
   panelTabs = [{ id: issue.id, issue, saved: null }];
@@ -363,7 +365,8 @@ function setupPanelTabs(panel) {
     if (id !== undefined) switchToTab(id);
   });
 
-  // A relationship row or a #N reference of a description or comment opens in a tab. Modified clicks keep opening GitHub.
+  // A relationship row or an issue link of a description, a comment, the editor preview or the timeline opens in a tab.
+  // Modified clicks keep opening GitHub.
   panel.addEventListener("click", (event) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const relation = event.target.closest("a.relation-link");
@@ -372,7 +375,7 @@ function setupPanelTabs(panel) {
       openIssueByReference({ repo: relation.dataset.repo, number: Number(relation.dataset.number), url: relation.href });
       return;
     }
-    const link = event.target.closest(".desc-body a.issue-link, .tl-comment-body a.issue-link");
+    const link = event.target.closest(ISSUE_LINK_SELECTOR);
     const match = link && /^https:\/\/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)(?:[/?#]|$)/.exec(link.dataset.url || link.href);
     if (!match) return;
     event.preventDefault();

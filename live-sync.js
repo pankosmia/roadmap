@@ -171,7 +171,16 @@ function mergeRemoteBatch({ items, snapshot, startedAt }, changes) {
       changes.push({ before: null, after: item });
       continue;
     }
-    if (hasPendingSave(local.id) || Date.parse(item.updated_at) <= Date.parse(local.updated_at)) continue;
+    if (hasPendingSave(local.id)) continue;
+    if (Date.parse(item.updated_at) <= Date.parse(local.updated_at)) {
+      // Closing or reopening a blocker changes the open blockers of the issues it blocks without touching their update time.
+      if (item.updated_at !== local.updated_at || openBlockerCount(item) === openBlockerCount(local)) continue;
+      const adopted = mergeUpdatedIssue(local, { issue_dependencies_summary: item.issue_dependencies_summary }, { adjustParent: false });
+      known.set(item.id, adopted);
+      changes.push({ before: local, after: adopted });
+      mergedIds.add(adopted.id);
+      continue;
+    }
     const merged = mergeUpdatedIssue(local, item, { adjustParent: false });
     known.set(item.id, merged);
     changes.push({ before: local, after: merged });

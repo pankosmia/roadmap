@@ -176,7 +176,7 @@ function createSubIssueNode(parent, subIssue, path, canDrag) {
   item.type = "button";
   item.className = isClosed(subIssue) ? "subissue-item is-closed" : "subissue-item";
   item.innerHTML = `
-    <span slot="start" class="subissue-status">${statusIconHtml(subIssue)}</span>
+    <span slot="start" class="subissue-status">${stateIconsHtml(subIssue)}</span>
     <div slot="headline">${escapeHtml(subIssue.title)}</div>
     <div slot="supporting-text">${escapeHtml(subIssueRef(subIssue, parent))}</div>
     ${avatarsHtml(subIssue, 20, "end")}

@@ -464,6 +464,19 @@ body.dragging-issue .column-heading * {
   color: var(--md-sys-color-error);
 }
 
+/* On cards and sub-issue rows the stop icon sits over the status icon (like .avatar over .avatar) to save width. */
+.state-icons {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+.state-icons .blocked-icon {
+  margin-left: -6px;
+  border-radius: 50%;
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
 .repo-name {
   max-width: 70%;
   overflow: hidden;
@@ -969,6 +982,11 @@ md-outlined-text-field {
   bottom: 72px;
 }
 
+/* Above the sync snackbar, which is above the Undo one. */
+.info-snackbar.is-raised {
+  bottom: 128px;
+}
+
 .issue-card.remote-updated,
 .subissue-node.remote-updated > .subissue-row {
   animation: remote-updated 6s ease-out;
@@ -1320,6 +1338,8 @@ md-outlined-text-field {
 .md-editor-preview {
   flex: 1;
   min-height: 220px;
+  /* The same cap as the description when it is read; the text scrolls inside past it. */
+  max-height: 70dvh;
   margin: 0;
   padding: 12px 16px;
   color: var(--md-sys-color-on-surface);
@@ -1333,7 +1353,9 @@ md-outlined-text-field {
   outline: 0;
   background: transparent;
   box-sizing: border-box;
-  resize: vertical;
+  /* The height follows the text (markdown-editor.js), so the textarea keeps it and only grows to fill extra room. */
+  flex: 1 0 auto;
+  resize: none;
 }
 
 .md-editor-input:disabled {
@@ -1489,9 +1511,34 @@ md-outlined-text-field {
   border: 1px solid var(--md-sys-color-outline-variant);
 }
 
-.markdown-body ul.contains-task-list {
-  padding-left: 4px;
+/* Lists: a wrapped line stays under the text of its item (hanging indent), as on GitHub. */
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 2em;
+}
+
+.markdown-body li + li,
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin-top: .25em;
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin-bottom: 0;
+}
+
+/* Task items have no bullet or number: the checkbox hangs in the indent of the list. */
+.markdown-body li.task-list-item {
   list-style: none;
+}
+
+.markdown-body .task-list-item-checkbox {
+  width: 1em;
+  height: 1em;
+  margin: 0 .35em .2em -1.6em; /* with the space after the box, the text starts at the item's edge */
+  vertical-align: middle;
+  accent-color: var(--md-sys-color-primary);
 }
 
 .markdown-body hr {
@@ -1499,11 +1546,39 @@ md-outlined-text-field {
   border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
+/* Reading: the status chip and the title stay above the scrolling column, so that the issue is always known. */
+.panel-pinned {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 24px 12px;
+}
+
+.panel-pinned[hidden] {
+  display: none;
+}
+
+.panel-pinned .status-row {
+  flex: none;
+  align-self: center;
+}
+
+.status-slot:not(:has(.status-row:not([hidden]))) {
+  display: none;
+}
+
 .panel-title-heading {
+  flex: 1;
+  min-width: 0;
   margin: 0;
   color: var(--md-sys-color-on-surface);
   font: var(--md-type-headline-small);
+  overflow: hidden;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .desc-card .tl-card-header .tl-avatar {
@@ -1650,12 +1725,6 @@ md-outlined-text-field {
 
 .desc-error {
   color: var(--md-sys-color-error);
-}
-
-.desc-body .task-list-item-checkbox {
-  margin: 0 6px 2px -2px;
-  vertical-align: middle;
-  accent-color: var(--md-sys-color-primary);
 }
 
 .desc-body .task-list-item-checkbox:not(:disabled) {
@@ -1925,6 +1994,13 @@ md-outlined-text-field {
   font: var(--md-type-label-large);
 }
 
+.relation-group.is-blocked h4,
+.is-open-blocker .relation-title,
+.is-open-blocker .relation-ref,
+.control-label.is-alert {
+  color: var(--md-sys-color-error);
+}
+
 .relation-row {
   display: flex;
   align-items: center;
@@ -2129,6 +2205,10 @@ md-outlined-text-field {
   }
 
   .panel-main {
+    padding-inline: 16px;
+  }
+
+  .panel-pinned {
     padding-inline: 16px;
   }
 
@@ -2972,6 +3052,12 @@ a.tl-actor:hover,
   overflow-wrap: anywhere;
 }
 
+/* What is read keeps the size and the line spacing of the editor (.md-editor-input). */
+.tl-comment-body,
+.desc-body .tl-empty {
+  font: var(--md-type-body-large);
+}
+
 .tl-empty {
   color: var(--md-sys-color-on-surface-variant);
   font-style: italic;
@@ -3081,7 +3167,7 @@ a.tl-actor:hover,
 
 .timeline .md-editor-input,
 .timeline .md-editor-preview {
-  min-height: 110px;
+  min-height: 160px;
 }
 
 .timeline-readonly {
