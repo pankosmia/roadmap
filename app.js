@@ -273,6 +273,7 @@ async function loadIssues({ force = false } = {}) {
       refreshButton.disabled = false;
       loadPullRequests();
       preloadSubIssueOrders();
+      refreshBlockers({ ids: new Set(), blocked: true });
       return;
     }
   } else {
@@ -308,6 +309,7 @@ async function loadIssues({ force = false } = {}) {
     summary.textContent = summaryText();
     loadPullRequests({ force: true });
     preloadSubIssueOrders();
+    refreshBlockers({ ids: new Set(), blocked: true });
     if (totalCount > 1000) {
       showNotice(`GitHub search can return at most 1,000 results. Showing the first 1,000 of ${totalCount} issues.`);
     } else {
@@ -1670,6 +1672,10 @@ function sortCardLabels(labels) {
 // GitHub counts the open issues that block this one (closed blockers no longer block).
 function openBlockerCount(issue) {
   return issue.issue_dependencies_summary?.blocked_by || 0;
+}
+
+function totalBlockers(issue) {
+  return issue.issue_dependencies_summary?.total_blocked_by || 0;
 }
 
 // The icons of cards and sub-issue rows: the stop icon overlaps the status icon, as the assignees' pictures overlap.

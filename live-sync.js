@@ -155,7 +155,10 @@ function hasPendingSave(issueId) {
 
 // Merges a batch into the loaded issues and records { before, after } for each issue that changed on GitHub.
 // An issue GitHub reports with an older "updated" time than ours is skipped: it is our own change, not yet indexed.
-function mergeRemoteBatch({ items, snapshot, startedAt }, changes) {
+// The search results do not decide the blockers of an issue: its summary is kept as it is here, and `recheck` collects the
+// issues whose relationships are read again from GitHub (see refreshBlockers): { ids, blocked }, where `blocked` asks
+// for every issue that has blockers.
+function mergeRemoteBatch({ items, snapshot, startedAt }, changes, recheck) {
   const known = new Map(issues.map((issue) => [issue.id, issue]));
   const seen = new Set();
   const mergedIds = new Set();
@@ -169,19 +172,18 @@ function mergeRemoteBatch({ items, snapshot, startedAt }, changes) {
       known.set(item.id, item);
       noteArchiveChange(item);
       changes.push({ before: null, after: item });
+      if (!snapshot || totalBlockers(item) > 0) recheck.ids.add(item.id);
       continue;
     }
     if (hasPendingSave(local.id)) continue;
-    if (Date.parse(item.updated_at) <= Date.parse(local.updated_at)) {
-      // Closing or reopening a blocker changes the open blockers of the issues it blocks without touching their update time.
-      if (item.updated_at !== local.updated_at || openBlockerCount(item) === openBlockerCount(local)) continue;
-      const adopted = mergeUpdatedIssue(local, { issue_dependencies_summary: item.issue_dependencies_summary }, { adjustParent: false });
-      known.set(item.id, adopted);
-      changes.push({ before: local, after: adopted });
-      mergedIds.add(adopted.id);
-      continue;
-    }
-    const merged = mergeUpdatedIssue(local, item, { adjustParent: false });
+    // Closing a blocker changes the open blockers of the issues it blocks without touching their update time.
+    if (isClosed(item) || isClosed(item) !== isClosed(local)) recheck.blocked = true;
+    if (totalBlockers(item) > 0 || totalBlockers(local) > 0) recheck.ids.add(item.id);
+    if (Date.parse(item.updated_at) <= Date.parse(local.updated_at)) continue;
+    if (!snapshot) recheck.ids.add(item.id);
+    const remote = { ...item };
+    if (local.issue_dependencies_summary) delete remote.issue_dependencies_summary;
+    const merged = mergeUpdatedIssue(local, remote, { adjustParent: false });
     known.set(item.id, merged);
     changes.push({ before: local, after: merged });
     mergedIds.add(merged.id);
@@ -214,7 +216,9 @@ function mergeRemoteBatch({ items, snapshot, startedAt }, changes) {
 function applyRemoteBatches(batches) {
   const panelState = capturePanelState();
   const changes = [];
-  for (const batch of batches) mergeRemoteBatch(batch, changes);
+  const recheck = { ids: new Set(), blocked: false };
+  for (const batch of batches) mergeRemoteBatch(batch, changes, recheck);
+  refreshBlockers(recheck);
   if (changes.length === 0) return;
 
   saveIssuesCache();

@@ -629,10 +629,12 @@ function createMarkdownEditor({ renderPreview, onSubmit, onInput = null, mention
         button.disabled = value;
       });
     },
-    focus() {
+    // The caret goes to the end; `showStart` keeps a long text shown from its first rows.
+    focus({ showStart = false } = {}) {
       if (previewing) setPreviewing(false);
-      input.focus();
+      input.focus({ preventScroll: showStart });
       input.setSelectionRange(input.value.length, input.value.length);
+      if (showStart) input.scrollTop = 0;
     },
     showWrite() {
       if (previewing) setPreviewing(false);

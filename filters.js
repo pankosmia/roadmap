@@ -75,14 +75,14 @@ function matchesFilters(issue) {
   return repos.length === 0 || repos.includes(repoOf(issue)[1]);
 }
 
-// A parent stays visible when it or one of its sub-issues matches; a nested sub-issue follows its parent.
+// A parent stays visible when it or one of its sub-issues, at any depth, matches; a nested sub-issue follows its parent.
 function passesFilters(issue) {
   if (!hasActiveFilters()) return true;
   if (isNestedSubIssue(issue)) {
     const parent = issues.find((item) => item.url === issue.parent_issue_url);
     return parent ? passesFilters(parent) : false;
   }
-  return matchesFilters(issue) || subIssuesOf(issue).some(matchesFilters);
+  return matchesFilters(issue) || descendantsOf(issue).some(matchesFilters);
 }
 
 function filterOptions() {

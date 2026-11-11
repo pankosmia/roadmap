@@ -441,7 +441,7 @@ function startDescriptionEdit() {
   descriptionEditor.value = issue.body || "";
   panelElements.error.hidden = true;
   refreshPanel();
-  descriptionEditor.focus();
+  descriptionEditor.focus({ showStart: true });
 }
 
 function finishDescriptionEdit() {
